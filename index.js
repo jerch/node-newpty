@@ -7,7 +7,7 @@ var ROWS = 25;
 
 function openpty(opts) {
     // get a pty master
-    var master = pty.openpt(fs.constants.O_RDWR | fs.constants.O_NOCTTY);
+    var master = pty.openpt(fs.constants.O_RDWR | fs.constants.O_NOCTTY | fs.constants.O_NONBLOCK);
 
     // grant and unlock
     pty.grantpt(master);
@@ -42,7 +42,7 @@ function forkpty(opts) {
             return {pid: 0, slave: fds.slave, slavename: fds.slavename};
         default:  // parent
             fs.closeSync(fds.slave);
-            return {pid: pid, master: fds.master, slavename: fds.slavename};
+            return {pid: pid, master: fds.master, slavename: fds.slavename, slave: fds.slave};
     }
 }
 
