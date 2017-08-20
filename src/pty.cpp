@@ -15,7 +15,7 @@
 #define SET(obj, name, symbol)                                                \
 obj->Set(Nan::New<String>(name).ToLocalChecked(), symbol)
 
-#define POLL_BUFSIZE 4096
+#define POLL_BUFSIZE 16384
 
 using namespace node;
 using namespace v8;
@@ -123,8 +123,8 @@ NAN_METHOD(c_set_size) {
 
 NAN_METHOD(c_exec) {  // TODO: implement all exec* functions
     Nan::HandleScope scope;
-    execle("/bin/ls", "/bin/ls", "-lR", "--color=tty", "/usr/lib", NULL, environ);
-    //execle("/bin/bash", "/bin/bash", "-l", NULL, environ);
+    //execle("/bin/ls", "/bin/ls", "-lR", "--color=tty", "/usr/lib", NULL, environ);
+    execle("/bin/bash", "/bin/bash", "-l", NULL, environ);
     printf("should not appear\n");
     info.GetReturnValue().SetUndefined();
 }
@@ -216,49 +216,91 @@ static void poll_runner(void *data) {
     int master = poller->master;
     int reader = poller->read;
     int writer = poller->write;
-    char buf[POLL_BUFSIZE];
-    struct pollfd readfd = {master, POLLIN | POLLHUP, 0};
-    struct pollfd writefd = {writer, POLLOUT, 0};
-    bool pending_write = false;
-    int written = 0;
-    int readed = 0;
+    char l_buf[POLL_BUFSIZE];
+    struct pollfd l_readfd = {master, POLLIN | POLLHUP, 0};
+    struct pollfd l_writefd = {writer, POLLOUT, 0};
+    bool l_pending_write = false;
+    int l_written = 0;
+    int l_readed = 0;
+    char r_buf[POLL_BUFSIZE];
+    struct pollfd r_readfd = {reader, POLLIN, 0};
+    struct pollfd r_writefd = {master, POLLOUT, 0};
+    bool r_pending_write = false;
+    int r_written = 0;
+    int r_readed = 0;
+    int res;
 
     for (;;) {
-        if (pending_write) {
-            writefd.revents = 0;
-            int res = poll(&writefd, 1, 10);
+        // write: l_buf --> writer
+        if (l_pending_write) {
+            l_writefd.revents = 0;
+            res = poll(&l_writefd, 1, 1); // FIXME catch EINTR
             if (res == -1) {
                 perror("Error reading master:");
-                uv_async_send(&poller->async);
-                return;
+                break;
             }
-            int w = write(writer, buf+written, readed);
-            if (w == readed) {
-                pending_write = false;
-                written = 0;
+            int w = write(writer, l_buf+l_written, l_readed);
+            if (w == l_readed) {
+                l_pending_write = false;
+                l_written = 0;
             } else {
-                written += w;
-                continue;
+                l_written += w;
             }
         }
 
-        readfd.revents = 0;
-        int res = poll(&readfd, 1, 10);
-        if (res == -1) {
-            perror("Error reading master:");
-            uv_async_send(&poller->async);
-            return;
+        // read: l_buf <-- master
+        if (!l_pending_write) {
+            l_readfd.revents = 0;
+            res = poll(&l_readfd, 1, 1); // FIXME catch EINTR
+            if (res == -1) {
+                perror("Error reading master:");
+                break;
+            }
+            if (l_readfd.revents & POLLIN) {
+                l_readed = read(master, l_buf, POLL_BUFSIZE);
+                l_pending_write = true;
+            } else if (l_readfd.revents & POLLHUP) {
+                close(writer);
+                close(reader);
+                break;
+            }
         }
 
-        if (readfd.revents & POLLIN) {
-            readed = read(master, buf, POLL_BUFSIZE);
-            pending_write = true;
-        } else if (readfd.revents & POLLHUP) {
-            close(writer);
-            close(reader);
-            uv_async_send(&poller->async);
-            return;
+        // write: r_buf --> master
+        if (r_pending_write) {
+            r_writefd.revents = 0;
+            res = poll(&r_writefd, 1, 1); // FIXME catch EINTR
+            if (res == -1) {
+                perror("Error reading master:");
+                break;
+            }
+            int w = write(master, r_buf+r_written, r_readed);
+            if (w == r_readed) {
+                r_pending_write = false;
+                r_written = 0;
+            } else {
+                r_written += w;
+            }
         }
+
+        // read: r_buf <-- reader
+        if (!r_pending_write) {
+            r_readfd.revents = 0;
+            res = poll(&r_readfd, 1, 1); // FIXME catch EINTR
+            if (res == -1) {
+                perror("Error reading master:");
+                break;
+            }
+            if (r_readfd.revents & POLLIN) {
+                r_readed = read(reader, r_buf, POLL_BUFSIZE);
+                r_pending_write = true;
+            } else if (r_readfd.revents & POLLHUP) {
+                close(writer);
+                close(reader);
+                break;
+            }
+        }
+
     }
 
     uv_async_send(&poller->async);
