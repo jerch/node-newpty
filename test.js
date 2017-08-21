@@ -4,9 +4,9 @@ var net = require('net');
 
 var pid = own_module.forkpty({termios: new Termios(0)});
 if (pid.pid){
-    var fds = own_module.get_fds(pid.master);
-    var stdout = net.Socket({fd: fds.read, readable: true, writable: false});
-    var stdin = net.Socket({fd: fds.write, readable: false, writable: true});
+    var channels = own_module.get_io_channels(pid.master);
+    var stdout = net.Socket({fd: channels.read, readable: true, writable: false});
+    var stdin = net.Socket({fd: channels.write, readable: false, writable: true});
     stdout.on('data', function(data) {
         console.log(data.toString());
     });

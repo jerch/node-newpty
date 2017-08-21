@@ -10,12 +10,14 @@
 #include <utmp.h>
 #include <poll.h>
 
-
 // macro for object attributes
 #define SET(obj, name, symbol)                                                \
 obj->Set(Nan::New<String>(name).ToLocalChecked(), symbol)
 
+// poll thread buffer size
 #define POLL_BUFSIZE 16384
+// poll timeout in msec
+#define POLL_TIMEOUT 10
 
 using namespace node;
 using namespace v8;
@@ -209,100 +211,90 @@ struct Poll {
 };
 
 static void poll_runner(void *data) {
-    // TODO: read/write backwards; exit on fd failure (closed from outside)
-
     Poll *poller = static_cast<Poll *>(data);
 
-    int master = poller->master;
-    int reader = poller->read;
-    int writer = poller->write;
+    // file descriptors
+    int master = poller->master;  // pty master
+    int reader = poller->read;    // read pipe
+    int writer = poller->write;   // write pipe
+
+    // "left side" data: master --> buf --> writer
     char l_buf[POLL_BUFSIZE];
-    struct pollfd l_readfd = {master, POLLIN | POLLHUP, 0};
-    struct pollfd l_writefd = {writer, POLLOUT, 0};
     bool l_pending_write = false;
     int l_written = 0;
-    int l_readed = 0;
+    int l_read = 0;
+
+    // "right side" data: reader --> buf --> master
     char r_buf[POLL_BUFSIZE];
-    struct pollfd r_readfd = {reader, POLLIN, 0};
-    struct pollfd r_writefd = {master, POLLOUT, 0};
     bool r_pending_write = false;
     int r_written = 0;
-    int r_readed = 0;
+    int r_read = 0;
     int res;
 
+    struct pollfd fds[] = {
+        {master, POLLOUT | POLLIN | POLLHUP, 0},
+        {writer, POLLOUT, 0},
+        {reader, POLLIN, 0}
+    };
+
     for (;;) {
-        // write: l_buf --> writer
-        if (l_pending_write) {
-            l_writefd.revents = 0;
-            res = poll(&l_writefd, 1, 1); // FIXME catch EINTR
-            if (res == -1) {
-                perror("Error reading master:");
-                break;
-            }
-            int w = write(writer, l_buf+l_written, l_readed);
-            if (w == l_readed) {
-                l_pending_write = false;
-                l_written = 0;
-            } else {
-                l_written += w;
-            }
+        fds[0].revents = 0;
+        fds[1].revents = 0;
+        fds[2].revents = 0;
+        TEMP_FAILURE_RETRY(res = poll(fds, 3, POLL_TIMEOUT));  // handles EINTR, TODO: check portability
+        if (res == -1) {
+            // FIXME: something unexpected happened, how to deal with it?
+            perror("poll error");
+            break;
         }
-
-        // read: l_buf <-- master
-        if (!l_pending_write) {
-            l_readfd.revents = 0;
-            res = poll(&l_readfd, 1, 1); // FIXME catch EINTR
-            if (res == -1) {
-                perror("Error reading master:");
-                break;
+        if (res) {
+            // master write
+            if (r_pending_write && fds[0].revents & POLLOUT) {
+                int w = write(master, r_buf+r_written, r_read);
+                if (w == r_read) {
+                    r_pending_write = false;
+                    r_written = 0;
+                } else {
+                    r_written += w;
+                }
             }
-            if (l_readfd.revents & POLLIN) {
-                l_readed = read(master, l_buf, POLL_BUFSIZE);
-                l_pending_write = true;
-            } else if (l_readfd.revents & POLLHUP) {
-                close(writer);
-                close(reader);
-                break;
+            // writer write
+            if (l_pending_write && fds[1].revents & POLLOUT) {
+                int w = write(writer, l_buf+l_written, l_read);
+                if (w == l_read) {
+                    l_pending_write = false;
+                    l_written = 0;
+                } else {
+                    l_written += w;
+                }
             }
-        }
-
-        // write: r_buf --> master
-        if (r_pending_write) {
-            r_writefd.revents = 0;
-            res = poll(&r_writefd, 1, 1); // FIXME catch EINTR
-            if (res == -1) {
-                perror("Error reading master:");
-                break;
-            }
-            int w = write(master, r_buf+r_written, r_readed);
-            if (w == r_readed) {
-                r_pending_write = false;
-                r_written = 0;
-            } else {
-                r_written += w;
-            }
-        }
-
-        // read: r_buf <-- reader
-        if (!r_pending_write) {
-            r_readfd.revents = 0;
-            res = poll(&r_readfd, 1, 1); // FIXME catch EINTR
-            if (res == -1) {
-                perror("Error reading master:");
-                break;
-            }
-            if (r_readfd.revents & POLLIN) {
-                r_readed = read(reader, r_buf, POLL_BUFSIZE);
+            // reader read
+            if (!r_pending_write && fds[2].revents & POLLIN) {
+                r_read = read(reader, r_buf, POLL_BUFSIZE);
                 r_pending_write = true;
-            } else if (r_readfd.revents & POLLHUP) {
+            } else if (fds[2].revents & POLLHUP) {
+                // FIXME: Do we need handle this case as well?
+                close(writer);
+                close(reader);
+                break;
+            }
+            // master read
+            if (!l_pending_write && fds[0].revents & POLLIN) {
+                l_read = read(master, l_buf, POLL_BUFSIZE);
+                l_pending_write = true;
+            } else if (fds[0].revents & POLLHUP) {
+                // we got a POLLHUP (all slaves hang up and the pty got useless)
+                // special case here: don't propagate hang up until we have written
+                // all pending read data (no POLLIN anymore) --> fixes #85
+                if (fds[0].revents & POLLIN)
+                    continue;
+                // no pending data anymore, close pipes to JS
                 close(writer);
                 close(reader);
                 break;
             }
         }
-
     }
-
     uv_async_send(&poller->async);
 }
 
@@ -324,7 +316,7 @@ static int nonblock(int fd) {
     return fcntl(fd, F_SETFL, flags | O_NONBLOCK);
 }
 
-NAN_METHOD(get_fds) {
+NAN_METHOD(get_io_channels) {
     if (info.Length() != 1
         || !info[0]->IsNumber())
     return Nan::ThrowError("usage: pty.get_fds(master_fd)");
@@ -367,7 +359,7 @@ NAN_METHOD(get_fds) {
 
 NAN_MODULE_INIT(init) {
     Nan::HandleScope scope;
-    SET(target, "get_fds", Nan::New<FunctionTemplate>(get_fds)->GetFunction());
+    SET(target, "get_io_channels", Nan::New<FunctionTemplate>(get_io_channels)->GetFunction());
     SET(target, "openpt", Nan::New<FunctionTemplate>(c_posix_openpt)->GetFunction());
     SET(target, "grantpt", Nan::New<FunctionTemplate>(c_grantpt)->GetFunction());
     SET(target, "unlockpt", Nan::New<FunctionTemplate>(c_unlockpt)->GetFunction());
