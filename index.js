@@ -14,8 +14,8 @@ function openpty(opts) {
     pty.unlockpt(master);
 
     // open slave side
-    var slavename = pty.ptsname(master);
-    var slave = fs.openSync(slavename, fs.constants.O_RDWR | fs.constants.O_NOCTTY);
+    var slavepath = pty.ptsname(master);
+    var slave = fs.openSync(slavepath, fs.constants.O_RDWR | fs.constants.O_NOCTTY);
 
     // apply termios settings
     (new Termios((opts) ? opts.termios: null)).writeTo(slave);
@@ -25,7 +25,7 @@ function openpty(opts) {
     var rows = (opts && opts.size) ? opts.size.rows || ROWS : ROWS;
     pty.set_size(master, cols, rows);
 
-    return {master: master, slave: slave, slavename: slavename};
+    return {master: master, slave: slave, slavepath: slavepath};
 }
 
 function forkpty(opts) {
@@ -39,10 +39,10 @@ function forkpty(opts) {
         case 0:   // child
             fs.closeSync(fds.master);
             pty.login_tty(fds.slave);
-            return {pid: 0, slave: fds.slave, slavename: fds.slavename};
+            return {pid: 0, fd: fds.slave, slavepath: fds.slavepath};
         default:  // parent
             fs.closeSync(fds.slave);
-            return {pid: pid, master: fds.master, slavename: fds.slavename, slave: fds.slave};
+            return {pid: pid, fd: fds.master, slavepath: fds.slavepath};
     }
 }
 
