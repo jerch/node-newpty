@@ -241,6 +241,8 @@ static void poll_runner(void *data) {
         fds[0].revents = 0;
         fds[1].revents = 0;
         fds[2].revents = 0;
+        fds[0].events = (r_pending_write) ? POLLOUT | POLLIN | POLLHUP : POLLIN | POLLHUP;
+        fds[1].events = (l_pending_write) ? POLLOUT : 0;
         TEMP_FAILURE_RETRY(res = poll(fds, 3, POLL_TIMEOUT));  // handles EINTR, TODO: check portability
         if (res == -1) {
             // FIXME: something unexpected happened, how to deal with it?
