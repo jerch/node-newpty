@@ -1,5 +1,4 @@
 #include "nan.h"
-#include "CTermios.h"
 #include <termios.h>
 #include <pty.h>
 #include <sys/ioctl.h>
@@ -78,7 +77,7 @@ NAN_METHOD(js_execle) {
         String::Utf8Value utf8_key(key);
         String::Utf8Value utf8_value(value);
         int res = snprintf(buf, 4096, "%s=%s", *utf8_key, *utf8_value);
-        assert(res < 4096);  // FIXME: make size dynamic
+        assert(res < 4096);  // TODO: make size dynamic
         env[i] = strdup(buf);
     }
     execve(argv[0], &argv[1], env);
@@ -149,7 +148,7 @@ NAN_METHOD(js_execve) {
         String::Utf8Value utf8_key(key);
         String::Utf8Value utf8_value(value);
         int res = snprintf(buf, 4096, "%s=%s", *utf8_key, *utf8_value);
-        assert(res < 4096);  // FIXME: make size dynamic
+        assert(res < 4096);  // TODO: make size dynamic
         env[i] = strdup(buf);
     }
     execve(argv[0], &argv[1], env);
@@ -184,7 +183,7 @@ NAN_METHOD(js_execvpe) {
         String::Utf8Value utf8_key(key);
         String::Utf8Value utf8_value(value);
         int res = snprintf(buf, 4096, "%s=%s", *utf8_key, *utf8_value);
-        assert(res < 4096);  // FIXME: make size dynamic
+        assert(res < 4096);  // TODO: make size dynamic
         env[i] = strdup(buf);
     }
     execvpe(argv[0], &argv[1], env);
@@ -485,7 +484,7 @@ inline void poll_thread(void *data) {
         // handles EINTR, TODO: check portability
         TEMP_FAILURE_RETRY(result = poll(fds, 3, POLL_TIMEOUT));
         if (result == -1) {
-            // FIXME: something unexpected happened, how to deal with it?
+            // TODO: something unexpected happened, how to deal with it?
             perror("poll error");
             break;
         }
@@ -517,7 +516,7 @@ inline void poll_thread(void *data) {
                 r_read = read(reader, r_buf, POLL_BUFSIZE);
                 r_pending_write = true;
             } else if (fds[2].revents & POLLHUP) {
-                // FIXME: Do we need handle this case as well?
+                // TODO: Do we need handle this case as well?
                 close(writer);
                 close(reader);
                 break;
