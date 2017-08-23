@@ -30,6 +30,16 @@ if (pid.pid){
     setTimeout(function(){stdin.write('exit\r');}, 2000);
 } else {
     // child - must exec early to work under OSX
+    // NOTE: libuv event loop is dysfunctional after fork
+    // if exec* fails all we can do here is exit
 
-    own_module.exec();
+    //var error = own_module.execl('/bin/bash', '/bin/bash', '-l');
+    //var error = own_module.execlp('bash', 'bash', '-l');
+    //var error = own_module.execle('/bin/bash', '/bin/bash', '-l', process.env);
+    //var error = own_module.execv('/bin/bash', ['/bin/bash', '-l']);
+    //var error = own_module.execvp('bash', ['bash', '-l']);
+    //var error = own_module.execve('/bin/bash', ['/bin/bash', '-l'], process.env);
+    var error = own_module.execvpe('bash', ['bash', '-l'], process.env);
+    process.stderr.write(error);
+    process.exit(-1);
 }

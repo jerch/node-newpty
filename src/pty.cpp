@@ -32,18 +32,169 @@ NAN_METHOD(js_fork) {
     info.GetReturnValue().Set(Nan::New<Number>(fork()));
 }
 
-
-/**
- *  Exec family
- *  TODO: implement all exec calls
- */
-
-NAN_METHOD(js_exec) {
-    Nan::HandleScope scope;
-    //execle("/bin/ls", "/bin/ls", "-lR", "--color=tty", "/usr/lib", NULL, environ);
-    execle("/bin/bash", "/bin/bash", "-l", NULL, environ);
-    printf("should not appear\n");
-    info.GetReturnValue().SetUndefined();
+// exec* family
+NAN_METHOD(js_execl) {
+    int length = info.Length();
+    char *argv[length+1];
+    argv[length] = nullptr;
+    for (int i=0; i<length; ++i)
+        argv[i] = strdup(*Nan::Utf8String(info[i]->ToString()));
+    execv(argv[0], &argv[1]);
+    std::string error(strerror(errno));
+    for (int i=0; i<length; ++i)
+        free(argv[i]);
+    info.GetReturnValue().Set(
+        Nan::New<String>((std::string("execl failed - ") + error).c_str()).ToLocalChecked());
+}
+NAN_METHOD(js_execlp) {
+    int length = info.Length();
+    char *argv[length+1];
+    argv[length] = nullptr;
+    for (int i=0; i<length; ++i)
+        argv[i] = strdup(*Nan::Utf8String(info[i]->ToString()));
+    execvp(argv[0], &argv[1]);
+    std::string error(strerror(errno));
+    for (int i=0; i<length; ++i)
+        free(argv[i]);
+    info.GetReturnValue().Set(
+        Nan::New<String>((std::string("execlp failed - ") + error).c_str()).ToLocalChecked());
+}
+NAN_METHOD(js_execle) {
+    int length = info.Length();
+    if (!info[length-1]->IsObject())
+        return Nan::ThrowError("usage: pty.execle(path, arg1, ..., env)");
+    char *argv[length];
+    argv[length-1] = nullptr;
+    for (int i=0; i<length-1; ++i)
+        argv[i] = strdup(*Nan::Utf8String(info[i]->ToString()));
+    Local<Object> js_env = info[length-1]->ToObject();
+    Local<Array> env_keys = js_env->GetOwnPropertyNames();
+    char buf[4096];
+    char *env[env_keys->Length()];
+    env[env_keys->Length()-1] = nullptr;
+    for (unsigned int i=0; i<env_keys->Length(); ++i) {
+        Local<Value> key = env_keys->Get(i);
+        Local<Value> value = js_env->Get(key);
+        String::Utf8Value utf8_key(key);
+        String::Utf8Value utf8_value(value);
+        int res = snprintf(buf, 4096, "%s=%s", *utf8_key, *utf8_value);
+        assert(res < 4096);  // FIXME: make size dynamic
+        env[i] = strdup(buf);
+    }
+    execve(argv[0], &argv[1], env);
+    std::string error(strerror(errno));
+    for (int i=0; i<length; ++i)
+        free(argv[i]);
+    for (unsigned int i=0; i<env_keys->Length(); ++i)
+        free(env[i]);
+    info.GetReturnValue().Set(
+        Nan::New<String>((std::string("execle failed - ") + error).c_str()).ToLocalChecked());
+}
+NAN_METHOD(js_execv) {
+    if (info.Length() != 2
+            || !info[0]->IsString()
+            || !info[1]->IsArray())
+        return Nan::ThrowError("usage: pty.execv(path, argv)");
+    Local<Array> js_argv = Local<Array>::Cast(info[1]);
+    char *argv[js_argv->Length()+2];
+    argv[js_argv->Length()+1] = nullptr;
+    argv[0] = strdup(*Nan::Utf8String(info[0]->ToString()));
+    for (unsigned int i=0; i<js_argv->Length(); ++i)
+        argv[i+1] = strdup(*Nan::Utf8String(js_argv->Get(i)));
+    execv(argv[0], &argv[1]);
+    std::string error(strerror(errno));
+    for (unsigned int i=0; i<js_argv->Length()+1; ++i)
+        free(argv[i]);
+    info.GetReturnValue().Set(
+        Nan::New<String>((std::string("execv failed - ") + error).c_str()).ToLocalChecked());
+}
+NAN_METHOD(js_execvp) {
+    if (info.Length() != 2
+            || !info[0]->IsString()
+            || !info[1]->IsArray())
+        return Nan::ThrowError("usage: pty.execvp(file, argv)");
+    Local<Array> js_argv = Local<Array>::Cast(info[1]);
+    char *argv[js_argv->Length()+2];
+    argv[js_argv->Length()+1] = nullptr;
+    argv[0] = strdup(*Nan::Utf8String(info[0]->ToString()));
+    for (unsigned int i=0; i<js_argv->Length(); ++i)
+        argv[i+1] = strdup(*Nan::Utf8String(js_argv->Get(i)));
+    execvp(argv[0], &argv[1]);
+    std::string error(strerror(errno));
+    for (unsigned int i=0; i<js_argv->Length()+1; ++i)
+        free(argv[i]);
+    info.GetReturnValue().Set(
+        Nan::New<String>((std::string("execvp failed - ") + error).c_str()).ToLocalChecked());
+}
+NAN_METHOD(js_execve) {
+    if (info.Length() != 3
+            || !info[0]->IsString()
+            || !info[1]->IsArray()
+            || !info[2]->IsObject())
+        return Nan::ThrowError("usage: pty.execve(path, argv, env)");
+    Local<Array> js_argv = Local<Array>::Cast(info[1]);
+    char *argv[js_argv->Length()+2];
+    argv[js_argv->Length()+1] = nullptr;
+    argv[0] = strdup(*Nan::Utf8String(info[0]->ToString()));
+    for (unsigned int i=0; i<js_argv->Length(); ++i)
+        argv[i+1] = strdup(*Nan::Utf8String(js_argv->Get(i)));
+    Local<Object> js_env = info[2]->ToObject();
+    Local<Array> env_keys = js_env->GetOwnPropertyNames();
+    char buf[4096];
+    char *env[env_keys->Length()];
+    env[env_keys->Length()-1] = nullptr;
+    for (unsigned int i=0; i<env_keys->Length(); ++i) {
+        Local<Value> key = env_keys->Get(i);
+        Local<Value> value = js_env->Get(key);
+        String::Utf8Value utf8_key(key);
+        String::Utf8Value utf8_value(value);
+        int res = snprintf(buf, 4096, "%s=%s", *utf8_key, *utf8_value);
+        assert(res < 4096);  // FIXME: make size dynamic
+        env[i] = strdup(buf);
+    }
+    execve(argv[0], &argv[1], env);
+    std::string error(strerror(errno));
+    for (unsigned int i=0; i<js_argv->Length()+1; ++i)
+        free(argv[i]);
+    for (unsigned int i=0; i<env_keys->Length(); ++i)
+            free(env[i]);
+    info.GetReturnValue().Set(
+        Nan::New<String>((std::string("execve failed - ") + error).c_str()).ToLocalChecked());
+}
+NAN_METHOD(js_execvpe) {
+    if (info.Length() != 3
+            || !info[0]->IsString()
+            || !info[1]->IsArray()
+            || !info[2]->IsObject())
+        return Nan::ThrowError("usage: pty.execvpe(file, argv, env)");
+    Local<Array> js_argv = Local<Array>::Cast(info[1]);
+    char *argv[js_argv->Length()+2];
+    argv[js_argv->Length()+1] = nullptr;
+    argv[0] = strdup(*Nan::Utf8String(info[0]->ToString()));
+    for (unsigned int i=0; i<js_argv->Length(); ++i)
+        argv[i+1] = strdup(*Nan::Utf8String(js_argv->Get(i)));
+    Local<Object> js_env = info[2]->ToObject();
+    Local<Array> env_keys = js_env->GetOwnPropertyNames();
+    char buf[4096];
+    char *env[env_keys->Length()];
+    env[env_keys->Length()-1] = nullptr;
+    for (unsigned int i=0; i<env_keys->Length(); ++i) {
+        Local<Value> key = env_keys->Get(i);
+        Local<Value> value = js_env->Get(key);
+        String::Utf8Value utf8_key(key);
+        String::Utf8Value utf8_value(value);
+        int res = snprintf(buf, 4096, "%s=%s", *utf8_key, *utf8_value);
+        assert(res < 4096);  // FIXME: make size dynamic
+        env[i] = strdup(buf);
+    }
+    execvpe(argv[0], &argv[1], env);
+    std::string error(strerror(errno));
+    for (unsigned int i=0; i<js_argv->Length()+1; ++i)
+        free(argv[i]);
+    for (unsigned int i=0; i<env_keys->Length(); ++i)
+            free(env[i]);
+    info.GetReturnValue().Set(
+        Nan::New<String>((std::string("execvpe failed - ") + error).c_str()).ToLocalChecked());
 }
 
 
@@ -82,7 +233,7 @@ NAN_METHOD(js_exec) {
  *          WEXITSTATUS:    exit code or -1
  *          WIFSIGNALED:    true if the process got signalled
  *          WTERMSIG:       signal code or -1
- *          WCOREDUMP:      true if core dumped upon a signal or -1
+ *          WCOREDUMP:      true if core dumped upon a signal or -1 (not on AIX and SunOS)
  *          WIFSTOPPED:     true if the process got stopped
  *          WSTOPSIG:       stop signal code or -1 if not stopped
  *          WIFCONTINUED:   true if process got continued
@@ -90,14 +241,14 @@ NAN_METHOD(js_exec) {
  */
 
 struct Wait {
-    Nan::Persistent<v8::Function> cb;
+    Nan::Persistent<Function> cb;
     pid_t pid;
     int options;
     uv_async_t async;
     uv_thread_t tid;
 };
 
-static void wait_thread(void *data) {
+inline void wait_thread(void *data) {
     Wait *waiter = static_cast<Wait *>(data);
     int wstatus;
     pid_t res = waitpid(waiter->pid, &wstatus, waiter->options);
@@ -106,13 +257,13 @@ static void wait_thread(void *data) {
     uv_async_send(&waiter->async);
 }
 
-static void close_wait_thread(uv_handle_t *handle) {
+inline void close_wait_thread(uv_handle_t *handle) {
     uv_async_t *async = (uv_async_t *) handle;
     Wait *waiter = static_cast<Wait *>(async->data);
     delete waiter;
 }
 
-static void after_wait_thread(uv_async_t *async) {
+inline void after_wait_thread(uv_async_t *async) {
     Nan::HandleScope scope;
     Wait *waiter = static_cast<Wait *>(async->data);
 
@@ -132,7 +283,7 @@ static void after_wait_thread(uv_async_t *async) {
     SET(obj, "WIFCONTINUED", Nan::New<Boolean>(WIFCONTINUED(wstatus)));
 
     Local<Value> argv[] = {obj};
-    Local<Function> cb = Nan::New<v8::Function>(waiter->cb);
+    Local<Function> cb = Nan::New<Function>(waiter->cb);
     waiter->cb.Reset();
     Nan::Callback(cb).Call(Nan::GetCurrentContext()->Global(), 1, argv);
     uv_close((uv_handle_t *)async, close_wait_thread);
@@ -151,7 +302,7 @@ NAN_METHOD(js_waitpid) {
     Wait *waiter = new Wait();
     waiter->pid = pid;
     waiter->options = options;
-    waiter->cb.Reset(v8::Local<v8::Function>::Cast(info[2]));
+    waiter->cb.Reset(Local<Function>::Cast(info[2]));
     waiter->async.data = waiter;
 
     uv_async_init(uv_default_loop(), &waiter->async, after_wait_thread);
@@ -278,7 +429,7 @@ NAN_METHOD(js_pty_set_size) {
  *  For a pty master fd a single poll thread will be started by
  *  calling `get_io_channels`. The read and write pipes are nonblocking
  *  and can be accessed with `net.Socket` from Javascript.
- *  A final hangup on the slave side of the pty device will not get propagated
+ *  A final hangup on the slave side of the pty device will not be propagated
  *  to the right side until all pending data got consumed.
  */
 
@@ -290,7 +441,7 @@ struct Poll {
     uv_thread_t tid;
 };
 
-static void poll_thread(void *data) {
+inline void poll_thread(void *data) {
     Poll *poller = static_cast<Poll *>(data);
 
     // file descriptors
@@ -311,24 +462,35 @@ static void poll_thread(void *data) {
     int r_read = 0;
 
     struct pollfd fds[] = {
-        {master, POLLOUT | POLLIN | POLLHUP, 0},
+        // master is a duplex pipe --> POLLOUT | POLLIN
+        // NOTE: POLLHUP get always delivered, we dont have to register it
+        {master, POLLOUT | POLLIN, 0},
+        // writer is only writable --> POLLOUT
         {writer, POLLOUT, 0},
+        // reader is only readable --> POLLIN
         {reader, POLLIN, 0}
     };
     int result;
 
     for (;;) {
+        // reset struct pollfd
         fds[0].revents = 0;
         fds[1].revents = 0;
         fds[2].revents = 0;
-        fds[0].events = (r_pending_write) ? POLLOUT | POLLIN | POLLHUP : POLLIN | POLLHUP;
+        // query POLLOUT only if data needs to be written
+        // to avoid 100% CPU usage on empty write pipes
+        fds[0].events = (r_pending_write) ? POLLOUT | POLLIN : POLLIN;
         fds[1].events = (l_pending_write) ? POLLOUT : 0;
-        TEMP_FAILURE_RETRY(result = poll(fds, 3, POLL_TIMEOUT));  // handles EINTR, TODO: check portability
+
+        // handles EINTR, TODO: check portability
+        TEMP_FAILURE_RETRY(result = poll(fds, 3, POLL_TIMEOUT));
         if (result == -1) {
             // FIXME: something unexpected happened, how to deal with it?
             perror("poll error");
             break;
         }
+
+        // result denotes the amount of file descriptors with poll events
         if (result) {
             // master write
             if (r_pending_write && fds[0].revents & POLLOUT) {
@@ -380,18 +542,17 @@ static void poll_thread(void *data) {
     uv_async_send(&poller->async);
 }
 
-static void close_poll_thread(uv_handle_t *handle) {
+inline void close_poll_thread(uv_handle_t *handle) {
     uv_async_t *async = (uv_async_t *) handle;
     Poll *poller = static_cast<Poll *>(async->data);
     delete poller;
 }
 
-static void after_poll_thread(uv_async_t *async) {
-    Nan::HandleScope scope;
+inline void after_poll_thread(uv_async_t *async) {
     uv_close((uv_handle_t *) async, close_poll_thread);
 }
 
-static int nonblock(int fd) {
+inline int nonblock(int fd) {
     int flags = fcntl(fd, F_GETFL, 0);
     if (flags == -1)
         return -1;
@@ -399,9 +560,8 @@ static int nonblock(int fd) {
 }
 
 NAN_METHOD(get_io_channels) {
-    if (info.Length() != 1
-        || !info[0]->IsNumber())
-    return Nan::ThrowError("usage: pty.get_io_channels(fd)");
+    if (info.Length() != 1 || !info[0]->IsNumber())
+        return Nan::ThrowError("usage: pty.get_io_channels(fd)");
 
     Poll *poller = nullptr;
 
@@ -443,16 +603,22 @@ NAN_METHOD(get_io_channels) {
  * Exported symbols by the module
  */
 NAN_MODULE_INIT(init) {
-    Nan::HandleScope scope;
+    SET(target, "fork", Nan::New<FunctionTemplate>(js_fork)->GetFunction());
+    SET(target, "execl", Nan::New<FunctionTemplate>(js_execl)->GetFunction());
+    SET(target, "execlp", Nan::New<FunctionTemplate>(js_execlp)->GetFunction());
+    SET(target, "execle", Nan::New<FunctionTemplate>(js_execle)->GetFunction());
+    SET(target, "execv", Nan::New<FunctionTemplate>(js_execv)->GetFunction());
+    SET(target, "execvp", Nan::New<FunctionTemplate>(js_execvp)->GetFunction());
+    SET(target, "execve", Nan::New<FunctionTemplate>(js_execve)->GetFunction());
+    SET(target, "execvpe", Nan::New<FunctionTemplate>(js_execvpe)->GetFunction());
+    SET(target, "waitpid", Nan::New<FunctionTemplate>(js_waitpid)->GetFunction());
     SET(target, "openpt", Nan::New<FunctionTemplate>(js_posix_openpt)->GetFunction());
     SET(target, "grantpt", Nan::New<FunctionTemplate>(js_grantpt)->GetFunction());
     SET(target, "unlockpt", Nan::New<FunctionTemplate>(js_unlockpt)->GetFunction());
     SET(target, "ptsname", Nan::New<FunctionTemplate>(js_ptsname)->GetFunction());
     SET(target, "login_tty", Nan::New<FunctionTemplate>(js_login_tty)->GetFunction());
-    SET(target, "fork", Nan::New<FunctionTemplate>(js_fork)->GetFunction());
     SET(target, "get_size", Nan::New<FunctionTemplate>(js_pty_get_size)->GetFunction());
     SET(target, "set_size", Nan::New<FunctionTemplate>(js_pty_set_size)->GetFunction());
-    SET(target, "waitpid", Nan::New<FunctionTemplate>(js_waitpid)->GetFunction());
     SET(target, "get_io_channels", Nan::New<FunctionTemplate>(get_io_channels)->GetFunction());
 
     // waitpid symbols
@@ -465,9 +631,6 @@ NAN_MODULE_INIT(init) {
 #ifdef WTRAPPED  // BSD only?
     SET(target, "WTRAPPED", Nan::New<Number>(WTRAPPED));
 #endif
-
-    // TODO: exec* functions
-    SET(target, "exec", Nan::New<FunctionTemplate>(js_exec)->GetFunction());
 }
 
 NODE_MODULE(pty, init)
