@@ -23,11 +23,12 @@ if (pid.pid){
     own_module.waitpid(pid.pid, 0, function(status) {
         console.log('process exited');
         console.log(status);
+        stdin.end();
     });
 
     // write something to the pty
-    setTimeout(function(){stdin.write('ls\r');}, 1000);
-    setTimeout(function(){stdin.write('exit\r');}, 2000);
+    //setTimeout(function(){stdin.write('ls\r');}, 1000);
+    //setTimeout(function(){stdin.write('exit\r');}, 2000);
 } else {
     // child - must exec early to work under OSX
     // NOTE: libuv event loop is dysfunctional after fork
@@ -39,7 +40,13 @@ if (pid.pid){
     //var error = own_module.execv('/bin/bash', ['/bin/bash', '-l']);
     //var error = own_module.execvp('bash', ['bash', '-l']);
     //var error = own_module.execve('/bin/bash', ['/bin/bash', '-l'], process.env);
-    var error = own_module.execvpe('bash', ['bash', '-l'], process.env);
+    //var error = own_module.execvpe('bash', ['bash', '-l'], process.env);
+    //var error = own_module.execl(
+    //    '/bin/bash',
+    //    '/bin/bash',
+    //    '-c',
+    //    'dd if=/dev/zero bs=1 count=65536 && echo -n "__sentinel__"');
+    var error = own_module.execl('/bin/ls', '/bin/ls', '-lR', '/usr/lib');
     process.stderr.write(error);
     process.exit(-1);
 }

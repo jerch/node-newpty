@@ -13,10 +13,8 @@
 #define SET(obj, name, symbol)                                                \
 obj->Set(Nan::New<String>(name).ToLocalChecked(), symbol)
 
-// poll thread buffer size
-#define POLL_BUFSIZE 16384
-// poll timeout in msec
-#define POLL_TIMEOUT 10
+#define POLL_BUFSIZE 16384  // poll thread buffer size
+#define POLL_TIMEOUT 10     // poll timeout in msec
 
 using namespace node;
 using namespace v8;
