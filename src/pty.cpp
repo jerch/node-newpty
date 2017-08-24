@@ -1,6 +1,5 @@
 #include "nan.h"
 #include <termios.h>
-//#include <pty.h>
 #include <sys/ioctl.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -8,16 +7,17 @@
 #include <fcntl.h>
 #include <utmp.h>
 #include <poll.h>
+#if defined(__APPLE__)
 #include <util.h>
+#endif
 
 // macro for object attributes
 #define SET(obj, name, symbol)                                                \
 obj->Set(Nan::New<String>(name).ToLocalChecked(), symbol)
 
-// poll thread buffer size
-#define POLL_BUFSIZE 16384
-// poll timeout in msec
-#define POLL_TIMEOUT 10
+
+#define POLL_BUFSIZE 16384  // poll thread buffer size
+#define POLL_TIMEOUT 10     // poll timeout in msec
 
 #ifndef TEMP_FAILURE_RETRY
 #define TEMP_FAILURE_RETRY(exp)            \
@@ -538,11 +538,15 @@ inline void poll_thread(void *data) {
                 l_read = read(master, l_buf, POLL_BUFSIZE);
                 l_pending_write = true;
             } else if (fds[0].revents & POLLHUP) {
+                printf("\nPOLLHUP");
                 // we got a POLLHUP (all slaves hang up and the pty got useless)
                 // special case here: don't propagate hang up until we have written
                 // all pending read data (no POLLIN anymore) --> fixes #85
-                if (fds[0].revents & POLLIN)
+                if (fds[0].revents & POLLIN) {
+                    printf(" | POLLIN\n");
                     continue;
+                }
+                printf("\n");
                 // no pending data anymore, close pipes to JS
                 close(writer);
                 close(reader);
@@ -550,6 +554,8 @@ inline void poll_thread(void *data) {
             }
         }
     }
+    //close(writer);
+    //close(reader);
     uv_async_send(&poller->async);
 }
 
