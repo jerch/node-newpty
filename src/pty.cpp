@@ -1,6 +1,6 @@
 #include "nan.h"
 #include <termios.h>
-#include <pty.h>
+//#include <pty.h>
 #include <sys/ioctl.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -8,6 +8,7 @@
 #include <fcntl.h>
 #include <utmp.h>
 #include <poll.h>
+#include <util.h>
 
 // macro for object attributes
 #define SET(obj, name, symbol)                                                \
@@ -17,6 +18,17 @@ obj->Set(Nan::New<String>(name).ToLocalChecked(), symbol)
 #define POLL_BUFSIZE 16384
 // poll timeout in msec
 #define POLL_TIMEOUT 10
+
+#ifndef TEMP_FAILURE_RETRY
+#define TEMP_FAILURE_RETRY(exp)            \
+  ({                                       \
+    int _rc;                               \
+    do {                                   \
+      _rc = (exp);                         \
+    } while (_rc == -1 && errno == EINTR); \
+    _rc;                                   \
+  })
+#endif
 
 using namespace node;
 using namespace v8;
@@ -186,7 +198,7 @@ NAN_METHOD(js_execvpe) {
         assert(res < 4096);  // TODO: make size dynamic
         env[i] = strdup(buf);
     }
-    execvpe(argv[0], &argv[1], env);
+    execve(argv[0], &argv[1], env);  // FIXME: execvpe not existing on OSX
     std::string error(strerror(errno));
     for (unsigned int i=0; i<js_argv->Length()+1; ++i)
         free(argv[i]);
