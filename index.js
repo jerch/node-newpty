@@ -47,6 +47,6 @@ function forkpty(opts) {
 }
 
 
-module.exports = require('./build/Release/pty');
+module.exports = pty;
 module.exports['openpty'] = openpty;
 module.exports['forkpty'] = forkpty;

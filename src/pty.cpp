@@ -1,6 +1,5 @@
 #include "nan.h"
 #include <termios.h>
-#include <pty.h>
 #include <sys/ioctl.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -8,6 +7,11 @@
 #include <fcntl.h>
 #include <utmp.h>
 #include <poll.h>
+#if defined(__APPLE__) && defined(__MACH__)
+#include <util.h>
+#endif
+
+// typical OS defines: https://sourceforge.net/p/predef/wiki/OperatingSystems/
 
 // macro for object attributes
 #define SET(obj, name, symbol)                                                \
@@ -15,6 +19,17 @@ obj->Set(Nan::New<String>(name).ToLocalChecked(), symbol)
 
 #define POLL_BUFSIZE 16384  // poll thread buffer size
 #define POLL_TIMEOUT 10     // poll timeout in msec
+
+#ifndef TEMP_FAILURE_RETRY
+#define TEMP_FAILURE_RETRY(exp)            \
+  ({                                       \
+    int _rc;                               \
+    do {                                   \
+      _rc = (exp);                         \
+    } while (_rc == -1 && errno == EINTR); \
+    _rc;                                   \
+  })
+#endif
 
 using namespace node;
 using namespace v8;
@@ -184,7 +199,11 @@ NAN_METHOD(js_execvpe) {
         assert(res < 4096);  // TODO: make size dynamic
         env[i] = strdup(buf);
     }
+#if defined(__APPLE__) && defined(__MACH__)
+    execve(argv[0], &argv[1], env);  // FIXME: no execvpe on BSDs
+#elif
     execvpe(argv[0], &argv[1], env);
+#endif
     std::string error(strerror(errno));
     for (unsigned int i=0; i<js_argv->Length()+1; ++i)
         free(argv[i]);
@@ -479,19 +498,19 @@ inline void poll_thread(void *data) {
         fds[0].events = (r_pending_write) ? POLLOUT | POLLIN : POLLIN;
         fds[1].events = (l_pending_write) ? POLLOUT : 0;
 
-        // handles EINTR, TODO: check portability
         TEMP_FAILURE_RETRY(result = poll(fds, 3, POLL_TIMEOUT));
         if (result == -1) {
-            // TODO: something unexpected happened, how to deal with it?
-            perror("poll error");
+            // something unexpected happened
             break;
         }
 
-        // result denotes the amount of file descriptors with poll events
+        // result denotes the number of file descriptors with poll events
         if (result) {
             // master write
             if (r_pending_write && fds[0].revents & POLLOUT) {
                 int w = write(master, r_buf+r_written, r_read);
+                if (w == -1)
+                    break;
                 if (w == r_read) {
                     r_pending_write = false;
                     r_written = 0;
@@ -502,6 +521,8 @@ inline void poll_thread(void *data) {
             // writer write
             if (l_pending_write && fds[1].revents & POLLOUT) {
                 int w = write(writer, l_buf+l_written, l_read);
+                if (w == -1)
+                    break;
                 if (w == l_read) {
                     l_pending_write = false;
                     l_written = 0;
@@ -512,16 +533,20 @@ inline void poll_thread(void *data) {
             // reader read
             if (!r_pending_write && fds[2].revents & POLLIN) {
                 r_read = read(reader, r_buf, POLL_BUFSIZE);
+                if (r_read == -1)
+                    break;
                 r_pending_write = true;
-            } else if (fds[2].revents & POLLHUP) {
-                // TODO: Do we need handle this case as well?
-                close(writer);
-                close(reader);
+            } else if (fds[2].revents & POLLHUP)
                 break;
-            }
             // master read
             if (!l_pending_write && fds[0].revents & POLLIN) {
                 l_read = read(master, l_buf, POLL_BUFSIZE);
+                if (l_read == -1)
+                    break;
+                // OSX 10.10: if slave hang up poll returns with POLLIN
+                // and read return 0 --> EOF
+                if (!l_read)
+                    break;
                 l_pending_write = true;
             } else if (fds[0].revents & POLLHUP) {
                 // we got a POLLHUP (all slaves hang up and the pty got useless)
@@ -529,13 +554,19 @@ inline void poll_thread(void *data) {
                 // all pending read data (no POLLIN anymore) --> fixes #85
                 if (fds[0].revents & POLLIN)
                     continue;
-                // no pending data anymore, close pipes to JS
-                close(writer);
-                close(reader);
                 break;
             }
+            // error on fds: POLLERR, POLLNVAL
+            if(fds[0].revents & POLLERR || fds[0].revents & POLLNVAL)
+                break;
+            if(fds[1].revents & POLLERR || fds[1].revents & POLLNVAL)
+                break;
+            if(fds[2].revents & POLLERR || fds[2].revents & POLLNVAL)
+                break;
         }
     }
+    close(writer);
+    close(reader);
     uv_async_send(&poller->async);
 }
 
