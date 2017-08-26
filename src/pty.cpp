@@ -454,7 +454,6 @@ struct Poll {
     uv_thread_t tid;
 };
 
-#if defined(__linux__)
 inline void poll_thread(void *data) {
     Poll *poller = static_cast<Poll *>(data);
 
@@ -508,7 +507,7 @@ inline void poll_thread(void *data) {
         if (result) {
             // master write
             if (r_pending_write && fds[0].revents & POLLOUT) {
-                int w = write(master, r_buf+r_written, r_read);
+                int w = write(master, r_buf+r_written, r_read);  // TODO: handle -1
                 if (w == r_read) {
                     r_pending_write = false;
                     r_written = 0;
@@ -518,7 +517,7 @@ inline void poll_thread(void *data) {
             }
             // writer write
             if (l_pending_write && fds[1].revents & POLLOUT) {
-                int w = write(writer, l_buf+l_written, l_read);
+                int w = write(writer, l_buf+l_written, l_read);  // TODO: handle -1
                 if (w == l_read) {
                     l_pending_write = false;
                     l_written = 0;
@@ -528,13 +527,17 @@ inline void poll_thread(void *data) {
             }
             // reader read
             if (!r_pending_write && fds[2].revents & POLLIN) {
-                r_read = read(reader, r_buf, POLL_BUFSIZE);
+                r_read = read(reader, r_buf, POLL_BUFSIZE);  // TODO: handle -1
                 r_pending_write = true;
             } else if (fds[2].revents & POLLHUP)
                 break;  // TODO: Do we need handle this case as well?
             // master read
             if (!l_pending_write && fds[0].revents & POLLIN) {
-                l_read = read(master, l_buf, POLL_BUFSIZE);
+                l_read = read(master, l_buf, POLL_BUFSIZE);  // TODO: handle -1
+                // OSX 10.10: if slave hang up poll returns with POLLIN
+                // and read return 0 --> EOF
+                if (!l_read)
+                    break;
                 l_pending_write = true;
             } else if (fds[0].revents & POLLHUP) {
                 // we got a POLLHUP (all slaves hang up and the pty got useless)
@@ -551,9 +554,6 @@ inline void poll_thread(void *data) {
     close(reader);
     uv_async_send(&poller->async);
 }
-#elif defined(__APPLE__) && defined(__MACH__)
-
-#endif
 
 inline void close_poll_thread(uv_handle_t *handle) {
     uv_async_t *async = (uv_async_t *) handle;
