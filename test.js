@@ -23,7 +23,6 @@ if (pid.pid){
     own_module.waitpid(pid.pid, 0, function(status) {
         console.log('process exited');
         console.log(status);
-        stdin.end();
     });
 
     // write something to the pty
