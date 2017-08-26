@@ -201,7 +201,7 @@ NAN_METHOD(js_execvpe) {
     }
 #if defined(__APPLE__) && defined(__MACH__)
     execve(argv[0], &argv[1], env);  // FIXME: no execvpe on BSDs
-#elif
+#else
     execvpe(argv[0], &argv[1], env);
 #endif
     std::string error(strerror(errno));
