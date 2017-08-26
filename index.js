@@ -16,7 +16,8 @@ function openpty(opts) {
     // open slave side
     var slavepath = pty.ptsname(master);
     var slave = fs.openSync(slavepath, fs.constants.O_RDWR | fs.constants.O_NOCTTY);
-    pty.fix_solaris(slave);
+    if (process.platform == 'sunos')
+        pty.load_driver(slave);
 
     // apply termios settings
     (new Termios((opts) ? opts.termios: null)).writeTo(slave);

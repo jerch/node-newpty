@@ -41,7 +41,6 @@ if (pid.pid){
     //var error = own_module.execv('/bin/bash', ['/bin/bash', '-l']);
     //var error = own_module.execvp('bash', ['bash', '-l']);
     //var error = own_module.execve('/bin/bash', ['/bin/bash', '-l'], process.env);
-    //var error = own_module.execvpe('bash', ['bash', '-l'], process.env);
     //var error = own_module.execl('/bin/ls', '/bin/ls', '-lR', '/usr/share');
 
     process.stderr.write(error);

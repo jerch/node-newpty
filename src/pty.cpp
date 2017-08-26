@@ -8,6 +8,8 @@
 #include <utmp.h>
 #include <poll.h>
 
+// typical OS defines: https://sourceforge.net/p/predef/wiki/OperatingSystems/
+
 #if defined(__APPLE__) && defined(__MACH__)
 #include <util.h>
 #endif
@@ -20,7 +22,9 @@
 # endif
 #endif
 
-// typical OS defines: https://sourceforge.net/p/predef/wiki/OperatingSystems/
+#if defined(SOLARIS)
+#include <stropts.h>
+#endif
 
 // macro for object attributes
 #define SET(obj, name, symbol)                                                \
@@ -197,47 +201,6 @@ NAN_METHOD(js_execve) {
     info.GetReturnValue().Set(
         Nan::New<String>((std::string("execve failed - ") + error).c_str()).ToLocalChecked());
 }
-NAN_METHOD(js_execvpe) {
-    if (info.Length() != 3
-            || !info[0]->IsString()
-            || !info[1]->IsArray()
-            || !info[2]->IsObject())
-        return Nan::ThrowError("usage: pty.execvpe(file, argv, env)");
-    Local<Array> js_argv = Local<Array>::Cast(info[1]);
-    char *argv[js_argv->Length()+2];
-    argv[js_argv->Length()+1] = nullptr;
-    argv[0] = strdup(*Nan::Utf8String(info[0]->ToString()));
-    for (unsigned int i=0; i<js_argv->Length(); ++i)
-        argv[i+1] = strdup(*Nan::Utf8String(js_argv->Get(i)));
-    Local<Object> js_env = info[2]->ToObject();
-    Local<Array> env_keys = js_env->GetOwnPropertyNames();
-    char buf[4096];
-    char *env[env_keys->Length()];
-    env[env_keys->Length()-1] = nullptr;
-    for (unsigned int i=0; i<env_keys->Length(); ++i) {
-        Local<Value> key = env_keys->Get(i);
-        Local<Value> value = js_env->Get(key);
-        String::Utf8Value utf8_key(key);
-        String::Utf8Value utf8_value(value);
-        int res = snprintf(buf, 4096, "%s=%s", *utf8_key, *utf8_value);
-        assert(res < 4096);  // TODO: make size dynamic
-        env[i] = strdup(buf);
-    }
-#if defined(__APPLE__) && defined(__MACH__)
-    execve(argv[0], &argv[1], env);  // FIXME: no execvpe on BSDs
-#elif defined(SOLARIS)
-    execve(argv[0], &argv[1], env);  // FIXME: no execvpe on Solaris
-#else
-    execvpe(argv[0], &argv[1], env);
-#endif
-    std::string error(strerror(errno));
-    for (unsigned int i=0; i<js_argv->Length()+1; ++i)
-        free(argv[i]);
-    for (unsigned int i=0; i<env_keys->Length(); ++i)
-            free(env[i]);
-    info.GetReturnValue().Set(
-        Nan::New<String>((std::string("execvpe failed - ") + error).c_str()).ToLocalChecked());
-}
 
 
 /**
@@ -357,11 +320,6 @@ NAN_METHOD(js_waitpid) {
 /**
  * PTY and TTY primitives
  */
-
-// replacements of pty primitives
-// forkpty --> #openpty, #fork, #login_tty - done
-// openpty --> posix_openpt, grantpt, unlockpt - done
-// login_tty --> setsid(); ioctl(0, TIOCSCTTY, 1); dup2(slave_fd, 0);  // TODO: check if available
 
 NAN_METHOD(js_posix_openpt) {
     if (info.Length() != 1 || !(info[0]->IsNumber()))
@@ -559,11 +517,11 @@ inline void poll_thread(void *data) {
             // reader read
             if (!r_pending_write && fds[2].revents & POLLIN) {
                 r_read = read(reader, r_buf, POLL_BUFSIZE);
-                // OSX 10.10: on broken pipe POLLIN is set
+                if (r_read == -1)
+                    break;
+                // OSX 10.10 & Solaris: on broken pipe POLLIN is set
                 // and read returns 0 --> EOF
                 if (!r_read)
-                    break;
-                if (r_read == -1)
                     break;
                 r_pending_write = true;
             } else if (fds[2].revents & POLLHUP)
@@ -573,7 +531,7 @@ inline void poll_thread(void *data) {
                 l_read = read(master, l_buf, POLL_BUFSIZE);
                 if (l_read == -1)
                     break;
-                // OSX 10.10: if slave hang up poll returns with POLLIN
+                // OSX 10.10 & Solaris: if slave hang up poll returns with POLLIN
                 // and read returns 0 --> EOF
                 if (!l_read)
                     break;
@@ -657,13 +615,16 @@ NAN_METHOD(get_io_channels) {
     info.GetReturnValue().Set(obj);
 }
 
-#include <stropts.h>
-NAN_METHOD(fix_solaris) {
+#ifdef SOLARIS
+NAN_METHOD(load_driver) {
+    if (info.Length() != 1 || !info[0]->IsNumber())
+        return Nan::ThrowError("usage: pty.load_driver(fd)");
     int slave = info[0]->IntegerValue();
     ioctl(slave, I_PUSH, "ptem");
     ioctl(slave, I_PUSH, "ldterm");
-    ioctl(slave, I_PUSH, "ttcompat");  // TODO: do we need this?
+    ioctl(slave, I_PUSH, "ttcompat");
 }
+#endif
 
 /**
  * Exported symbols by the module
@@ -676,7 +637,6 @@ NAN_MODULE_INIT(init) {
     SET(target, "execv", Nan::New<FunctionTemplate>(js_execv)->GetFunction());
     SET(target, "execvp", Nan::New<FunctionTemplate>(js_execvp)->GetFunction());
     SET(target, "execve", Nan::New<FunctionTemplate>(js_execve)->GetFunction());
-    SET(target, "execvpe", Nan::New<FunctionTemplate>(js_execvpe)->GetFunction());
     SET(target, "waitpid", Nan::New<FunctionTemplate>(js_waitpid)->GetFunction());
     SET(target, "openpt", Nan::New<FunctionTemplate>(js_posix_openpt)->GetFunction());
     SET(target, "grantpt", Nan::New<FunctionTemplate>(js_grantpt)->GetFunction());
@@ -687,7 +647,7 @@ NAN_MODULE_INIT(init) {
     SET(target, "set_size", Nan::New<FunctionTemplate>(js_pty_set_size)->GetFunction());
     SET(target, "get_io_channels", Nan::New<FunctionTemplate>(get_io_channels)->GetFunction());
 #ifdef SOLARIS
-    SET(target, "fix_solaris", Nan::New<FunctionTemplate>(fix_solaris)->GetFunction());
+    SET(target, "load_driver", Nan::New<FunctionTemplate>(load_driver)->GetFunction());
 #endif
     // waitpid symbols
     SET(target, "WNOHANG", Nan::New<Number>(WNOHANG));
