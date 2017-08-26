@@ -533,6 +533,10 @@ inline void poll_thread(void *data) {
             // reader read
             if (!r_pending_write && fds[2].revents & POLLIN) {
                 r_read = read(reader, r_buf, POLL_BUFSIZE);
+                // OSX 10.10: on broken pipe POLLIN is set
+                // and read returns 0 --> EOF
+                if (!r_read)
+                    break;
                 if (r_read == -1)
                     break;
                 r_pending_write = true;
@@ -544,7 +548,7 @@ inline void poll_thread(void *data) {
                 if (l_read == -1)
                     break;
                 // OSX 10.10: if slave hang up poll returns with POLLIN
-                // and read return 0 --> EOF
+                // and read returns 0 --> EOF
                 if (!l_read)
                     break;
                 l_pending_write = true;
