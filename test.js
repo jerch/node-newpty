@@ -27,8 +27,8 @@ if (pid.pid){
     });
 
     // write something to the pty
-    //setTimeout(function(){stdin.write('ls\r');}, 1000);
-    //setTimeout(function(){stdin.write('exit\r');}, 2000);
+    setTimeout(function(){stdin.write('ls\r');}, 1000);
+    setTimeout(function(){stdin.write('exit\r');}, 2000);
 } else {
     // child - must exec early to work under OSX
     // NOTE: libuv event loop is dysfunctional after fork
