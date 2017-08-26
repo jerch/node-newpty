@@ -200,7 +200,11 @@ NAN_METHOD(js_execvpe) {
         assert(res < 4096);  // TODO: make size dynamic
         env[i] = strdup(buf);
     }
-    execve(argv[0], &argv[1], env);  // FIXME: execvpe not existing on OSX
+#if defined(__APPLE__) && defined(__MACH__)
+    execve(argv[0], &argv[1], env);  // FIXME: no execvpe on BSDs
+#elif
+    execvpe(argv[0], &argv[1], env);
+#endif
     std::string error(strerror(errno));
     for (unsigned int i=0; i<js_argv->Length()+1; ++i)
         free(argv[i]);
@@ -495,19 +499,19 @@ inline void poll_thread(void *data) {
         fds[0].events = (r_pending_write) ? POLLOUT | POLLIN : POLLIN;
         fds[1].events = (l_pending_write) ? POLLOUT : 0;
 
-        // handles EINTR, TODO: check portability
         TEMP_FAILURE_RETRY(result = poll(fds, 3, POLL_TIMEOUT));
         if (result == -1) {
-            // TODO: something unexpected happened, how to deal with it?
-            perror("poll error");
+            // something unexpected happened
             break;
         }
 
-        // result denotes the amount of file descriptors with poll events
+        // result denotes the number of file descriptors with poll events
         if (result) {
             // master write
             if (r_pending_write && fds[0].revents & POLLOUT) {
-                int w = write(master, r_buf+r_written, r_read);  // TODO: handle -1
+                int w = write(master, r_buf+r_written, r_read);
+                if (w == -1)
+                    break;
                 if (w == r_read) {
                     r_pending_write = false;
                     r_written = 0;
@@ -517,7 +521,9 @@ inline void poll_thread(void *data) {
             }
             // writer write
             if (l_pending_write && fds[1].revents & POLLOUT) {
-                int w = write(writer, l_buf+l_written, l_read);  // TODO: handle -1
+                int w = write(writer, l_buf+l_written, l_read);
+                if (w == -1)
+                    break;
                 if (w == l_read) {
                     l_pending_write = false;
                     l_written = 0;
@@ -527,13 +533,17 @@ inline void poll_thread(void *data) {
             }
             // reader read
             if (!r_pending_write && fds[2].revents & POLLIN) {
-                r_read = read(reader, r_buf, POLL_BUFSIZE);  // TODO: handle -1
+                r_read = read(reader, r_buf, POLL_BUFSIZE);
+                if (r_read == -1)
+                    break;
                 r_pending_write = true;
             } else if (fds[2].revents & POLLHUP)
-                break;  // TODO: Do we need handle this case as well?
+                break;
             // master read
             if (!l_pending_write && fds[0].revents & POLLIN) {
-                l_read = read(master, l_buf, POLL_BUFSIZE);  // TODO: handle -1
+                l_read = read(master, l_buf, POLL_BUFSIZE);
+                if (l_read == -1)
+                    break;
                 // OSX 10.10: if slave hang up poll returns with POLLIN
                 // and read return 0 --> EOF
                 if (!l_read)
@@ -546,7 +556,13 @@ inline void poll_thread(void *data) {
                 if (fds[0].revents & POLLIN)
                     continue;
                 break;
-            } else if (fds[0].revents & POLLNVAL)
+            }
+            // error on fds: POLLERR, POLLNVAL
+            if(fds[0].revents & POLLERR || fds[0].revents & POLLNVAL)
+                break;
+            if(fds[1].revents & POLLERR || fds[1].revents & POLLNVAL)
+                break;
+            if(fds[2].revents & POLLERR || fds[2].revents & POLLNVAL)
                 break;
         }
     }
