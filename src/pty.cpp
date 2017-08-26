@@ -7,9 +7,11 @@
 #include <fcntl.h>
 #include <utmp.h>
 #include <poll.h>
-#if defined(__APPLE__)
+#if defined(__APPLE__) && defined(__MACH__)
 #include <util.h>
 #endif
+
+// typical OS defines: https://sourceforge.net/p/predef/wiki/OperatingSystems/
 
 // macro for object attributes
 #define SET(obj, name, symbol)                                                \
@@ -452,6 +454,7 @@ struct Poll {
     uv_thread_t tid;
 };
 
+#if defined(__linux__)
 inline void poll_thread(void *data) {
     Poll *poller = static_cast<Poll *>(data);
 
@@ -527,37 +530,30 @@ inline void poll_thread(void *data) {
             if (!r_pending_write && fds[2].revents & POLLIN) {
                 r_read = read(reader, r_buf, POLL_BUFSIZE);
                 r_pending_write = true;
-            } else if (fds[2].revents & POLLHUP) {
-                // TODO: Do we need handle this case as well?
-                close(writer);
-                close(reader);
-                break;
-            }
+            } else if (fds[2].revents & POLLHUP)
+                break;  // TODO: Do we need handle this case as well?
             // master read
             if (!l_pending_write && fds[0].revents & POLLIN) {
                 l_read = read(master, l_buf, POLL_BUFSIZE);
                 l_pending_write = true;
             } else if (fds[0].revents & POLLHUP) {
-                printf("\nPOLLHUP");
                 // we got a POLLHUP (all slaves hang up and the pty got useless)
                 // special case here: don't propagate hang up until we have written
                 // all pending read data (no POLLIN anymore) --> fixes #85
-                if (fds[0].revents & POLLIN) {
-                    printf(" | POLLIN\n");
+                if (fds[0].revents & POLLIN)
                     continue;
-                }
-                printf("\n");
-                // no pending data anymore, close pipes to JS
-                close(writer);
-                close(reader);
                 break;
-            }
+            } else if (fds[0].revents & POLLNVAL)
+                break;
         }
     }
-    //close(writer);
-    //close(reader);
+    close(writer);
+    close(reader);
     uv_async_send(&poller->async);
 }
+#elif defined(__APPLE__) && defined(__MACH__)
+
+#endif
 
 inline void close_poll_thread(uv_handle_t *handle) {
     uv_async_t *async = (uv_async_t *) handle;
