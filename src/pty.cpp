@@ -7,8 +7,17 @@
 #include <fcntl.h>
 #include <utmp.h>
 #include <poll.h>
+
 #if defined(__APPLE__) && defined(__MACH__)
 #include <util.h>
+#endif
+
+#if defined(sun) || defined(__sun)
+# if defined(__SVR4) || defined(__svr4__)
+#define SOLARIS 1
+# else
+// SunOS - not supported
+# endif
 #endif
 
 // typical OS defines: https://sourceforge.net/p/predef/wiki/OperatingSystems/
@@ -29,6 +38,21 @@ obj->Set(Nan::New<String>(name).ToLocalChecked(), symbol)
     } while (_rc == -1 && errno == EINTR); \
     _rc;                                   \
   })
+#endif
+
+#ifndef login_tty
+int login_tty(int fd)
+{
+    setsid();
+    if (ioctl(fd, TIOCSCTTY, NULL) == -1)
+        return (-1);
+    dup2(fd, STDIN_FILENO);
+    dup2(fd, STDOUT_FILENO);
+    dup2(fd, STDERR_FILENO);
+	if (fd > 2)
+        close(fd);
+	return (0);
+}
 #endif
 
 using namespace node;
@@ -201,6 +225,8 @@ NAN_METHOD(js_execvpe) {
     }
 #if defined(__APPLE__) && defined(__MACH__)
     execve(argv[0], &argv[1], env);  // FIXME: no execvpe on BSDs
+#elif defined(SOLARIS)
+    execve(argv[0], &argv[1], env);  // FIXME: no execvpe on Solaris
 #else
     execvpe(argv[0], &argv[1], env);
 #endif
@@ -631,6 +657,14 @@ NAN_METHOD(get_io_channels) {
     info.GetReturnValue().Set(obj);
 }
 
+#include <stropts.h>
+NAN_METHOD(fix_solaris) {
+    int slave = info[0]->IntegerValue();
+    ioctl(slave, I_PUSH, "ptem");
+    ioctl(slave, I_PUSH, "ldterm");
+    ioctl(slave, I_PUSH, "ttcompat");  // TODO: do we need this?
+}
+
 /**
  * Exported symbols by the module
  */
@@ -652,7 +686,9 @@ NAN_MODULE_INIT(init) {
     SET(target, "get_size", Nan::New<FunctionTemplate>(js_pty_get_size)->GetFunction());
     SET(target, "set_size", Nan::New<FunctionTemplate>(js_pty_set_size)->GetFunction());
     SET(target, "get_io_channels", Nan::New<FunctionTemplate>(get_io_channels)->GetFunction());
-
+#ifdef SOLARIS
+    SET(target, "fix_solaris", Nan::New<FunctionTemplate>(fix_solaris)->GetFunction());
+#endif
     // waitpid symbols
     SET(target, "WNOHANG", Nan::New<Number>(WNOHANG));
     SET(target, "WUNTRACED", Nan::New<Number>(WUNTRACED));
