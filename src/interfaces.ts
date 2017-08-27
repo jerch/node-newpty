@@ -1,3 +1,5 @@
+import * as net from 'net';
+
 export interface ISize {
     cols?: number;
     rows?: number;
@@ -42,7 +44,12 @@ export interface IWaitStatus {
     WIFCONTINUED?: boolean;
 }
 
-export interface IPtyChannels {
+export interface IPtyFileDescriptors {
     read: number;
     write: number;
+}
+
+export interface IPtyChannels {
+    stdin: net.Socket;
+    stdout: net.Socket;
 }

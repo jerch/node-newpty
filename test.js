@@ -8,14 +8,12 @@ if (pid.pid){
 
     // get STDIN/STDOUT file descriptors suitable for net.Socket
     var channels = own_module.get_io_channels(pid.fd);
-    var stdout = net.Socket({fd: channels.read, readable: true, writable: false});
-    var stdin = net.Socket({fd: channels.write, readable: false, writable: true});
 
-    stdout.on('data', function(data) {
+    channels.stdout.on('data', function(data) {
         console.log(data.toString());
     });
 
-    stdout.on('end', function() {
+    channels.stdout.on('end', function() {
         console.log('pty stream end');
     });
 
@@ -26,8 +24,8 @@ if (pid.pid){
     });
 
     // write something to the pty
-    setTimeout(function(){stdin.write('ls\r');}, 1000);
-    setTimeout(function(){stdin.write('exit\r');}, 2000);
+    setTimeout(function(){channels.stdin.write('ls\r');}, 1000);
+    setTimeout(function(){channels.stdin.write('exit\r');}, 2000);
 } else {
     // child - must exec early to work under OSX
     // NOTE: libuv event loop is dysfunctional after fork

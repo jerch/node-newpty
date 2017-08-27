@@ -1,7 +1,8 @@
 import {IOpenPtyOptions, INativePty, IForkPtyResult, IWaitSymbols,
-    IWaitStatus, ISize, IPtyChannels} from './interfaces';
+    IWaitStatus, ISize, IPtyFileDescriptors, IPtyChannels} from './interfaces';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as net from 'net';
 import ProcessEnv = NodeJS.ProcessEnv;
 // FIXME - create type for Termios
 import {Termios} from 'node-termios';
@@ -20,14 +21,14 @@ export let execv: {(path: string, argv: string[]): string} = native.execv;
 export let execvp: {(file: string, argv: string[]): string} = native.execvp;
 export let execve: {(file: string, argv: string[], env: ProcessEnv): string} = native.execve;
 export let waitpid: {(pid: number, options: number, callback: (status?: IWaitStatus) => void): void} = native.waitpid;
-export let openpt: {(fd: number): number} = native.openpt;
+export let openpt: {(options: number): number} = native.openpt;
 export let grantpt: {(fd: number): void} = native.grantpt;
 export let unlockpt: {(fd: number): void} = native.unlockpt;
 export let ptsname: {(fd: number): string} = native.ptsname;
 export let login_tty: {(fd: number): void} = native.login_tty;
 export let get_size: {(fd: number): ISize} = native.get_size;
 export let set_size: {(fd: number, cols: number, rows: number): ISize} = native.set_size;
-export let get_io_channels: {(fd: number): IPtyChannels} = native.get_io_channels;
+export let _get_io_channels: {(fd: number): IPtyFileDescriptors} = native.get_io_channels;
 // FIXME: load_driver missing - how to deal with optional functions (solaris only)?
 export let WAITSYMBOLS: IWaitSymbols = native.WAITSYMBOLS;
 
@@ -88,4 +89,26 @@ export function forkpty(opts: IOpenPtyOptions): IForkPtyResult {
             fs.closeSync(nativePty.slave);
             return {pid: pid, fd: nativePty.master, slavepath: nativePty.slavepath};
     }
+}
+
+/**
+ * get_io_channels - get stdin/stdout sockets for the pty master fd.
+ *
+ * This functions spawns additional OS pipes and forwards data
+ * from and to the pty master fd. This is needed to circumvent data loss
+ * at the end of the last slave process.
+ * The pipes get closed automatically by the underlying poll implementation
+ * once `EOF` is reached:
+ *      - last open pty slave was closed
+ *      - pty master was closed
+ *
+ * @param fd
+ * @return {{stdout: Socket, stdin: Socket}}
+ */
+export function get_io_channels(fd: number): IPtyChannels {
+    let channels: IPtyFileDescriptors = _get_io_channels(fd);
+    return {
+        stdin: new net.Socket({fd: channels.write, readable: false, writable: true}),
+        stdout: new net.Socket({fd: channels.read, readable: true, writable: false})
+    };
 }
