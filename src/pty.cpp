@@ -391,7 +391,7 @@ NAN_METHOD(js_pty_get_size) {
         return Nan::ThrowError((std::string("get_size failed - ") + error).c_str());
     }
     Local<Object> obj = Nan::New<Object>();
-    SET(obj, "columns", Nan::New<Number>(winp.ws_col));
+    SET(obj, "cols", Nan::New<Number>(winp.ws_col));
     SET(obj, "rows", Nan::New<Number>(winp.ws_row));
     info.GetReturnValue().Set(obj);
 }
@@ -412,7 +412,7 @@ NAN_METHOD(js_pty_set_size) {
         return Nan::ThrowError((std::string("get_size failed - ") + error).c_str());
     }
     Local<Object> obj = Nan::New<Object>();
-    SET(obj, "columns", Nan::New<Number>(winp.ws_col));
+    SET(obj, "cols", Nan::New<Number>(winp.ws_col));
     SET(obj, "rows", Nan::New<Number>(winp.ws_row));
     info.GetReturnValue().Set(obj);
 }
@@ -628,7 +628,7 @@ NAN_METHOD(load_driver) {
     int slave = info[0]->IntegerValue();
     ioctl(slave, I_PUSH, "ptem");
     ioctl(slave, I_PUSH, "ldterm");
-    ioctl(slave, I_PUSH, "ttcompat");
+    ioctl(slave, I_PUSH, "ttcompat");  // TODO: do we need BSD compat mode?
 }
 #endif
 
@@ -655,24 +655,27 @@ NAN_MODULE_INIT(init) {
 #ifdef SOLARIS
     SET(target, "load_driver", Nan::New<FunctionTemplate>(load_driver)->GetFunction());
 #endif
+
     // waitpid symbols
-    SET(target, "WNOHANG", Nan::New<Number>(WNOHANG));
-    SET(target, "WUNTRACED", Nan::New<Number>(WUNTRACED));
+    Local<Object> waitsymbols = Nan::New<Object>();
+    SET(waitsymbols, "WNOHANG", Nan::New<Number>(WNOHANG));
+    SET(waitsymbols, "WUNTRACED", Nan::New<Number>(WUNTRACED));
 #ifdef WCONTINUED  // not on NetBSD
-    SET(target, "WCONTINUED", Nan::New<Number>(WCONTINUED));
+    SET(waitsymbols, "WCONTINUED", Nan::New<Number>(WCONTINUED));
 #endif
 #ifdef WEXITED  // not on OpenBSD and NetBSD
-    SET(target, "WEXITED", Nan::New<Number>(WEXITED));
+    SET(waitsymbols, "WEXITED", Nan::New<Number>(WEXITED));
 #endif
 #ifdef WSTOPPED  // not on OpenBSD
-    SET(target, "WSTOPPED", Nan::New<Number>(WSTOPPED));
+    SET(waitsymbols, "WSTOPPED", Nan::New<Number>(WSTOPPED));
 #endif
 #ifdef WNOWAIT  // not on OpenBSD
-    SET(target, "WNOWAIT", Nan::New<Number>(WNOWAIT));
+    SET(waitsymbols, "WNOWAIT", Nan::New<Number>(WNOWAIT));
 #endif
 #ifdef WTRAPPED  // BSDs only
-    SET(target, "WTRAPPED", Nan::New<Number>(WTRAPPED));
+    SET(waitsymbols, "WTRAPPED", Nan::New<Number>(WTRAPPED));
 #endif
+    SET(target, "WAITSYMBOLS", waitsymbols);
 }
 
 NODE_MODULE(pty, init)

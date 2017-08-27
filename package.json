@@ -4,12 +4,24 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "tsc": "tsc",
+    "tslint": "tslint src/**/*.ts",
+    "install": "node scripts/install.js",
+    "postinstall": "node scripts/post-install.js",
+    "test": "cross-env NODE_ENV=test mocha -R spec lib/*.test.js",
+    "prepublish": "npm run tsc"
   },
   "author": "Joerg Breitbart <j.breitbart@netzkolchose.de>",
   "license": "MIT",
   "dependencies": {
     "nan": "^2.6.2",
     "node-termios": "git+https://github.com/jerch/node-termios.git"
+  },
+  "devDependencies": {
+    "@types/node": "^8.0.25",
+    "typescript": "^2.4.2",
+    "tslint": "^5.7.0",
+    "@types/mocha": "^2.2.42",
+    "mocha": "^3.5.0"
   }
 }

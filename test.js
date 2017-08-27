@@ -1,4 +1,4 @@
-var own_module = require('./index');
+var own_module = require('./lib/pty');
 var Termios = require('node-termios').Termios;
 var net = require('net');
 
