@@ -8,7 +8,7 @@ var ROWS = 25;
 function openpty(opts) {
     // get a pty master
     var master = -1;
-    if (process.platform == 'freebsd')
+    if (process.platform == 'freebsd' || process.platform == 'openbsd')
         master = pty.openpt(fs.constants.O_RDWR | fs.constants.O_NOCTTY);
     else
         master = pty.openpt(fs.constants.O_RDWR | fs.constants.O_NOCTTY | fs.constants.O_NONBLOCK);

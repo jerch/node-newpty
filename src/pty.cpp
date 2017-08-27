@@ -228,10 +228,10 @@ NAN_METHOD(js_execve) {
  *      WUNTRACED   return if a child has stopped
  *      WCONTINUED  return if a stopped child has been resumed by delivery of SIGCONT
  *      WEXITED     returns true if the child terminated normally
- *                  by calling exit or _exit, or by returning from main()
- *      WSTOPPED    process got stopped by delivery of a signal
+ *                  by calling exit or _exit, or by returning from main() (not on OpenBSD)
+ *      WSTOPPED    process got stopped by delivery of a signal (not on OpenBSD)
  *      WNOWAIT     leave the child in a waitable state; a later wait call can be used
- *                  to retrieve the child status information again
+ *                  to retrieve the child status information again (not on OpenBSD)
  *      WTRAPPED    report the status of selected processes which are being traced (BSD only)
  *
  *  Once a process meets the wait conditions of `options`
@@ -657,10 +657,16 @@ NAN_MODULE_INIT(init) {
     SET(target, "WNOHANG", Nan::New<Number>(WNOHANG));
     SET(target, "WUNTRACED", Nan::New<Number>(WUNTRACED));
     SET(target, "WCONTINUED", Nan::New<Number>(WCONTINUED));
+#ifdef WEXITED  // not on OpenBSD
     SET(target, "WEXITED", Nan::New<Number>(WEXITED));
+#endif
+#ifdef WSTOPPED  // not on OpenBSD
     SET(target, "WSTOPPED", Nan::New<Number>(WSTOPPED));
+#endif
+#ifdef WNOWAIT  // not on OpenBSD
     SET(target, "WNOWAIT", Nan::New<Number>(WNOWAIT));
-#ifdef WTRAPPED  // BSD only?
+#endif
+#ifdef WTRAPPED  // BSDs only
     SET(target, "WTRAPPED", Nan::New<Number>(WTRAPPED));
 #endif
 }
