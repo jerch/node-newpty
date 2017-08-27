@@ -5,10 +5,14 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <fcntl.h>
-#include <utmp.h>
 #include <poll.h>
 
 // typical OS defines: https://sourceforge.net/p/predef/wiki/OperatingSystems/
+#if defined(__FreeBSD__)
+#include <libutil.h>
+#else
+#include <utmp.h>
+#endif
 
 #if defined(__APPLE__) && defined(__MACH__)
 #include <util.h>
