@@ -33,10 +33,13 @@ describe('native functions', () => {
     });
     it('set_size (master only)', () => {
         let master: number = -1;
+        let slave: number = -1;
         assert.doesNotThrow(() => {
             master = pty.openpt(fs.constants.O_RDWR | fs.constants.O_NOCTTY);
             pty.grantpt(master);
             pty.unlockpt(master);
+            // slave must be opened to set size under BSDs
+            slave = fs.openSync(pty.ptsname(master), fs.constants.O_RDWR | fs.constants.O_NOCTTY);
         });
         let size: Interfaces.ISize = {cols: -1, rows: -1};
         assert.doesNotThrow(() => {
@@ -51,6 +54,7 @@ describe('native functions', () => {
         assert.equal(size.cols, 12);
         assert.equal(size.rows, 13);
         fs.closeSync(master);
+        fs.closeSync(slave);
     });
     it('get_size (master and slave)', () => {
         let master: number = -1;
