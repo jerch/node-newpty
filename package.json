@@ -20,6 +20,7 @@
     "typescript": "^2.4.2",
     "tslint": "^5.7.0",
     "@types/mocha": "^2.2.42",
-    "mocha": "^3.5.0"
+    "mocha": "^3.5.0",
+    "cross-env": "^5.0.5"
   }
 }
