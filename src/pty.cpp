@@ -226,7 +226,7 @@ NAN_METHOD(js_execve) {
  *      0           grab all process exits
  *      WNOHANG     return immediately (non-blocking)
  *      WUNTRACED   return if a child has stopped
- *      WCONTINUED  return if a stopped child has been resumed by delivery of SIGCONT
+ *      WCONTINUED  return if a stopped child has been resumed by delivery of SIGCONT (not on NetBSD)
  *      WEXITED     returns true if the child terminated normally
  *                  by calling exit or _exit, or by returning from main() (not on OpenBSD)
  *      WSTOPPED    process got stopped by delivery of a signal (not on OpenBSD)
@@ -245,7 +245,7 @@ NAN_METHOD(js_execve) {
  *          WCOREDUMP:      true if core dumped upon a signal or -1 (not on AIX and SunOS)
  *          WIFSTOPPED:     true if the process got stopped
  *          WSTOPSIG:       stop signal code or -1 if not stopped
- *          WIFCONTINUED:   true if process got continued
+ *          WIFCONTINUED:   true if process got continued (not on NetBSD)
  *      }
  */
 
@@ -289,7 +289,9 @@ inline void after_wait_thread(uv_async_t *async) {
 #endif
     SET(obj, "WIFSTOPPED", Nan::New<Boolean>(WIFSTOPPED(wstatus)));
     SET(obj, "WSTOPSIG", Nan::New<Number>(WIFSTOPPED(wstatus) ? WSTOPSIG(wstatus): -1));
+#ifdef WIFCONTINUED  // not on NetBSD
     SET(obj, "WIFCONTINUED", Nan::New<Boolean>(WIFCONTINUED(wstatus)));
+#endif
 
     Local<Value> argv[] = {obj};
     Local<Function> cb = Nan::New<Function>(waiter->cb);
@@ -656,8 +658,10 @@ NAN_MODULE_INIT(init) {
     // waitpid symbols
     SET(target, "WNOHANG", Nan::New<Number>(WNOHANG));
     SET(target, "WUNTRACED", Nan::New<Number>(WUNTRACED));
+#ifdef WCONTINUED  // not on NetBSD
     SET(target, "WCONTINUED", Nan::New<Number>(WCONTINUED));
-#ifdef WEXITED  // not on OpenBSD
+#endif
+#ifdef WEXITED  // not on OpenBSD and NetBSD
     SET(target, "WEXITED", Nan::New<Number>(WEXITED));
 #endif
 #ifdef WSTOPPED  // not on OpenBSD
