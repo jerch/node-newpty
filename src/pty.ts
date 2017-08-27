@@ -29,7 +29,7 @@ export let login_tty: {(fd: number): void} = native.login_tty;
 export let get_size: {(fd: number): ISize} = native.get_size;
 export let set_size: {(fd: number, cols: number, rows: number): ISize} = native.set_size;
 export let _get_io_channels: {(fd: number): IPtyFileDescriptors} = native.get_io_channels;
-// FIXME: load_driver missing - how to deal with optional functions (solaris only)?
+export let load_driver: {(fd: number): void} = (process.platform === 'sunos') ? native.load_driver : (_) =>{};
 export let WAITSYMBOLS: IWaitSymbols = native.WAITSYMBOLS;
 
 /**
@@ -53,9 +53,8 @@ export function openpty(opts: IOpenPtyOptions): INativePty {
     // open slave side
     let slavepath: string = ptsname(master);
     let slave: number = fs.openSync(slavepath, fs.constants.O_RDWR | fs.constants.O_NOCTTY);
-    if (process.platform === 'sunos')
-        // solaris has to load extra drivers on the slave fd to get terminal semantics
-        native.load_driver(slave);
+    // solaris has to load extra drivers on the slave fd to get terminal semantics
+    load_driver(slave);
 
     // apply termios settings
     (new Termios((opts) ? opts.termios : null)).writeTo(slave);

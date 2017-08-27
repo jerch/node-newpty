@@ -40,6 +40,7 @@ describe('native functions', () => {
             pty.unlockpt(master);
             // slave must be opened to set size under BSDs
             slave = fs.openSync(pty.ptsname(master), fs.constants.O_RDWR | fs.constants.O_NOCTTY);
+            pty.load_driver(slave);
         });
         let size: Interfaces.ISize = {cols: -1, rows: -1};
         assert.doesNotThrow(() => {
@@ -64,6 +65,7 @@ describe('native functions', () => {
             pty.grantpt(master);
             pty.unlockpt(master);
             slave = fs.openSync(pty.ptsname(master), fs.constants.O_RDWR | fs.constants.O_NOCTTY);
+            pty.load_driver(slave);
         });
         let size_master: Interfaces.ISize = {cols: -1, rows: -1};
         let size_slave: Interfaces.ISize = {cols: -1, rows: -1};
