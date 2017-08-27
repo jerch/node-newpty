@@ -33,8 +33,8 @@ if (pid.pid){
 
     //var error = own_module.execve('/bin/ls', ['/bin/ls', '-lR', '--color', '/usr/lib'], process.env);
     //var error = own_module.execle('/bin/bash', '/bin/bash', '-c', 'dd if=/dev/zero bs=1 count=65536 && echo -n "__sentinel__"', process.env);
-    var error = own_module.execl('/bin/bash', '/bin/bash', '-l');
-    //var error = own_module.execlp('bash', 'bash', '-l');
+    //var error = own_module.execl('/bin/bash', '/bin/bash', '-l');
+    var error = own_module.execlp('bash', 'bash', '-l');
     //var error = own_module.execle('/bin/bash', '/bin/bash', '-l', process.env);
     //var error = own_module.execv('/bin/bash', ['/bin/bash', '-l']);
     //var error = own_module.execvp('bash', ['bash', '-l']);
