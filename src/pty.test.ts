@@ -40,6 +40,7 @@ describe('native functions', () => {
             pty.unlockpt(master);
             // slave must be opened to set size under BSDs
             slave = fs.openSync(pty.ptsname(master), fs.constants.O_RDWR | fs.constants.O_NOCTTY);
+            // solaris needs this, empty call for others
             pty.load_driver(slave);
         });
         let size: Interfaces.ISize = {cols: -1, rows: -1};
@@ -77,7 +78,9 @@ describe('native functions', () => {
             master = pty.openpt(fs.constants.O_RDWR | fs.constants.O_NOCTTY);
             pty.grantpt(master);
             pty.unlockpt(master);
+            // slave must be opened to set size under BSDs
             slave = fs.openSync(pty.ptsname(master), fs.constants.O_RDWR | fs.constants.O_NOCTTY);
+            // solaris needs this, empty call for others
             pty.load_driver(slave);
             pty.set_size(master, 12, 13);
         });

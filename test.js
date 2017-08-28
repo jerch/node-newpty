@@ -6,7 +6,7 @@ var pid = own_module.forkpty({termios: new Termios(0)});
 if (pid.pid){
     // parent
 
-    // get STDIN/STDOUT file descriptors suitable for net.Socket
+    // get STDIN/STDOUT channels
     var channels = own_module.get_io_channels(pid.fd);
 
     channels.stdout.on('data', function(data) {

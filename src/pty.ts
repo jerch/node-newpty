@@ -39,12 +39,7 @@ export let WAITSYMBOLS: IWaitSymbols = native.WAITSYMBOLS;
  */
 export function openpty(opts: IOpenPtyOptions): INativePty {
     // get a pty master
-    let master: number = -1;
-    // TODO: Do we need nonblocking here at all?
-    if (process.platform === 'freebsd' || process.platform === 'openbsd')
-        master = openpt(fs.constants.O_RDWR | fs.constants.O_NOCTTY);
-    else
-        master = openpt(fs.constants.O_RDWR | fs.constants.O_NOCTTY | fs.constants.O_NONBLOCK);
+    let master = openpt(fs.constants.O_RDWR | fs.constants.O_NOCTTY);
 
     // grant and unlock
     grantpt(master);

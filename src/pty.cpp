@@ -72,8 +72,27 @@ using namespace v8;
  *  TODO: maybe move to a separate module?
  */
 
+inline int nonblock(int fd) {
+    int flags = fcntl(fd, F_GETFL, 0);
+    if (flags == -1)
+        return -1;
+    return fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+}
+
+inline int cloexec(int fd) {
+    int flags = fcntl(fd, F_GETFD, 0);
+    if (flags == -1)
+        return -1;
+    return fcntl(fd, F_SETFD, flags | FD_CLOEXEC);
+}
+
 NAN_METHOD(js_fork) {
-    info.GetReturnValue().Set(Nan::New<Number>(fork()));
+    // see uv_spawn
+    uv_rwlock_wrlock(&uv_default_loop()->cloexec_lock);
+    pid_t pid = fork();
+    if (pid)  // release lock for error (-1) and parent (>0)
+        uv_rwlock_wrunlock(&uv_default_loop()->cloexec_lock);
+    info.GetReturnValue().Set(Nan::New<Number>(pid));
 }
 
 // exec* family
@@ -331,6 +350,8 @@ NAN_METHOD(js_posix_openpt) {
     if (info.Length() != 1 || !(info[0]->IsNumber()))
         return Nan::ThrowError("usage: posix_openpt(flags)");
     int fd = posix_openpt(info[0]->IntegerValue());
+    cloexec(fd);
+    nonblock(fd);
     if (fd < 0) {
         std::string error(strerror(errno));
         return Nan::ThrowError((std::string("posix_openpt failed - ") + error).c_str());
@@ -574,13 +595,6 @@ inline void after_poll_thread(uv_async_t *async) {
     uv_close((uv_handle_t *) async, close_poll_thread);
 }
 
-inline int nonblock(int fd) {
-    int flags = fcntl(fd, F_GETFL, 0);
-    if (flags == -1)
-        return -1;
-    return fcntl(fd, F_SETFL, flags | O_NONBLOCK);
-}
-
 NAN_METHOD(get_io_channels) {
     if (info.Length() != 1 || !info[0]->IsNumber())
         return Nan::ThrowError("usage: pty.get_io_channels(fd)");
@@ -593,7 +607,9 @@ NAN_METHOD(get_io_channels) {
     if (pipe(pipes1))
         goto exit;
     nonblock(pipes1[0]);
+    cloexec(pipes1[0]);
     nonblock(pipes1[1]);
+    cloexec(pipes1[1]);
     if (pipe(pipes2)) {
         close(pipes1[0]);
         close(pipes1[1]);
@@ -602,7 +618,9 @@ NAN_METHOD(get_io_channels) {
         goto exit;
     }
     nonblock(pipes2[0]);
+    cloexec(pipes2[0]);
     nonblock(pipes2[1]);
+    cloexec(pipes2[1]);
 
     // setup polling thread
     poller = new Poll();
