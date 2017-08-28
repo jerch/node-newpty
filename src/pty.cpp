@@ -639,16 +639,16 @@ NAN_METHOD(get_io_channels) {
     info.GetReturnValue().Set(obj);
 }
 
-#ifdef SOLARIS
 NAN_METHOD(load_driver) {
+#ifdef SOLARIS
     if (info.Length() != 1 || !info[0]->IsNumber())
         return Nan::ThrowError("usage: pty.load_driver(fd)");
     int slave = info[0]->IntegerValue();
     ioctl(slave, I_PUSH, "ptem");
     ioctl(slave, I_PUSH, "ldterm");
     ioctl(slave, I_PUSH, "ttcompat");  // TODO: do we need BSD compat mode?
-}
 #endif
+}
 
 /**
  * Exported symbols by the module
@@ -670,9 +670,7 @@ NAN_MODULE_INIT(init) {
     SET(target, "get_size", Nan::New<FunctionTemplate>(js_pty_get_size)->GetFunction());
     SET(target, "set_size", Nan::New<FunctionTemplate>(js_pty_set_size)->GetFunction());
     SET(target, "get_io_channels", Nan::New<FunctionTemplate>(get_io_channels)->GetFunction());
-#ifdef SOLARIS
     SET(target, "load_driver", Nan::New<FunctionTemplate>(load_driver)->GetFunction());
-#endif
 
     // waitpid symbols
     Local<Object> waitsymbols = Nan::New<Object>();

@@ -4,33 +4,33 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as net from 'net';
 import ProcessEnv = NodeJS.ProcessEnv;
-// FIXME - create type for Termios
 import {Termios} from 'node-termios';
 
-const native = require(path.join('..', 'build', 'Release', 'pty.node'));
+// interface from C++
+export interface INative {
+    fork(): number;
+    execl(path: string, ...args: string[]): string;
+    execlp(file: string, ...args: string[]): string;
+    execle(...args: any[]): string;
+    execv(path: string, argv: string[]): string;
+    execvp(file: string, argv: string[]): string;
+    execve(file: string, argv: string[], env: ProcessEnv): string;
+    waitpid(pid: number, options: number, callback: (status?: IWaitStatus) => void): void;
+    openpt(options: number): number;
+    grantpt(fd: number): void;
+    unlockpt(fd: number): void;
+    ptsname(fd: number): string;
+    login_tty(fd: number): void;
+    get_size(fd: number): ISize;
+    set_size(fd: number, cols: number, rows: number): ISize;
+    get_io_channels(fd: number): IPtyFileDescriptors;
+    load_driver(fd: number): void;
+    WAITSYMBOLS: IWaitSymbols;
+}
+export const native: INative = require(path.join('..', 'build', 'Release', 'pty.node'));
 
 export const DEFAULT_COLS: number = 80;
 export const DEFAULT_ROWS: number = 24;
-
-// interfaces from C++
-export let fork: {(): number} = native.fork;
-export let execl: {(path: string, ...args: string[]): string} = native.execl;
-export let execlp: {(file: string, ...args: string[]): string} = native.execlp;
-export let execle = native.execle;  // FIXME: how to type this?
-export let execv: {(path: string, argv: string[]): string} = native.execv;
-export let execvp: {(file: string, argv: string[]): string} = native.execvp;
-export let execve: {(file: string, argv: string[], env: ProcessEnv): string} = native.execve;
-export let waitpid: {(pid: number, options: number, callback: (status?: IWaitStatus) => void): void} = native.waitpid;
-export let openpt: {(options: number): number} = native.openpt;
-export let grantpt: {(fd: number): void} = native.grantpt;
-export let unlockpt: {(fd: number): void} = native.unlockpt;
-export let ptsname: {(fd: number): string} = native.ptsname;
-export let login_tty: {(fd: number): void} = native.login_tty;
-export let get_size: {(fd: number): ISize} = native.get_size;
-export let set_size: {(fd: number, cols: number, rows: number): ISize} = native.set_size;
-export let _get_io_channels: {(fd: number): IPtyFileDescriptors} = native.get_io_channels;
-export let load_driver: {(fd: number): void} = (process.platform === 'sunos') ? native.load_driver : (_) =>{};
-export let WAITSYMBOLS: IWaitSymbols = native.WAITSYMBOLS;
 
 /**
  * openpty - open a new pty device.
@@ -39,17 +39,17 @@ export let WAITSYMBOLS: IWaitSymbols = native.WAITSYMBOLS;
  */
 export function openpty(opts: IOpenPtyOptions): INativePty {
     // get a pty master
-    let master = openpt(fs.constants.O_RDWR | fs.constants.O_NOCTTY);
+    let master = native.openpt(fs.constants.O_RDWR | fs.constants.O_NOCTTY);
 
     // grant and unlock
-    grantpt(master);
-    unlockpt(master);
+    native.grantpt(master);
+    native.unlockpt(master);
 
     // open slave side
-    let slavepath: string = ptsname(master);
+    let slavepath: string = native.ptsname(master);
     let slave: number = fs.openSync(slavepath, fs.constants.O_RDWR | fs.constants.O_NOCTTY);
     // solaris has to load extra drivers on the slave fd to get terminal semantics
-    load_driver(slave);
+    native.load_driver(slave);
 
     // apply termios settings
     (new Termios((opts) ? opts.termios : null)).writeTo(slave);
@@ -57,7 +57,7 @@ export function openpty(opts: IOpenPtyOptions): INativePty {
     // apply size settings
     let cols: number = (opts && opts.size) ? opts.size.cols || DEFAULT_COLS : DEFAULT_COLS;
     let rows: number = (opts && opts.size) ? opts.size.rows || DEFAULT_ROWS : DEFAULT_ROWS;
-    set_size(master, cols, rows);
+    native.set_size(master, cols, rows);
 
     return {master: master, slave: slave, slavepath: slavepath};
 }
@@ -69,7 +69,7 @@ export function openpty(opts: IOpenPtyOptions): INativePty {
  */
 export function forkpty(opts: IOpenPtyOptions): IForkPtyResult {
     let nativePty: INativePty = openpty(opts);
-    let pid: number = fork();
+    let pid: number = native.fork();
     switch (pid) {
         case -1:  // error
             fs.closeSync(nativePty.master);
@@ -77,7 +77,7 @@ export function forkpty(opts: IOpenPtyOptions): IForkPtyResult {
             throw new Error('error running forkpty');
         case 0:   // child
             fs.closeSync(nativePty.master);
-            login_tty(nativePty.slave);
+            native.login_tty(nativePty.slave);
             return {pid: 0, fd: nativePty.slave, slavepath: nativePty.slavepath};
         default:  // parent
             fs.closeSync(nativePty.slave);
@@ -100,7 +100,7 @@ export function forkpty(opts: IOpenPtyOptions): IForkPtyResult {
  * @return {{stdout: Socket, stdin: Socket}}
  */
 export function get_io_channels(fd: number): IPtyChannels {
-    let channels: IPtyFileDescriptors = _get_io_channels(fd);
+    let channels: IPtyFileDescriptors = native.get_io_channels(fd);
     return {
         stdin: new net.Socket({fd: channels.write, readable: false, writable: true}),
         stdout: new net.Socket({fd: channels.read, readable: true, writable: false})
