@@ -142,14 +142,17 @@ export function spawn2(
     options = options || {};
     let pty_opts: I.OpenPtyOptions = {termios: options.termios, size: options.size};
     let n_pty: I.NativePty = openpty(pty_opts);
-    let channels: I.PtyChannels = get_io_channels(n_pty.master);
     options.stdio = [n_pty.slave, n_pty.slave, n_pty.slave];
     options.detached = true;
     let child: I.ChildProcess = childprocess.spawn(command, args, options);
-    fs.closeSync(n_pty.slave);
+    child.on('exit', function(code, signal) {
+        console.log(code, signal);
+    });
+    let channels: I.PtyChannels = get_io_channels(n_pty.master);
     child.stdin = channels.stdin;
     child.stdout = channels.stdout;
     child.master = n_pty.master;
     child.slavepath = n_pty.slavepath;
+    fs.closeSync(n_pty.slave);
     return child;
 }
