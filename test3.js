@@ -4,7 +4,7 @@ var pty = require('./lib/pty');
 var Termios = require('node-termios').Termios;
 
 var n_pty = pty.openpty({termios: new Termios(0)});
-var child = childprocess.spawn('bash', ['-l'],
+var child = childprocess.spawn(pty.HELPER, ['bash', '-l'],
     {env: process.env, stdio: [n_pty.slave, n_pty.slave, n_pty.slave], detached: true});
 
 child.on('exit', function(code, signal) {

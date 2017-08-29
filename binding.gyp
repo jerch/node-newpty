@@ -11,6 +11,11 @@
                     'libraries!': ['-lutil'],
                 }],
             ],
+        },
+        {
+            'target_name': 'helper',
+            'type': 'executable',
+            'sources': ['src/helper.cpp']
         }
     ],
 }

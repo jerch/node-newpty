@@ -127,6 +127,8 @@ export function spawn(
 }
 
 
+export const HELPER: string = path.join(__dirname, '..', 'build', 'Release', 'helper');
+
 /**
  * spawn2 - child_process based version.
  * @param command
@@ -144,7 +146,7 @@ export function spawn2(
     let n_pty: I.NativePty = openpty(pty_opts);
     options.stdio = [n_pty.slave, n_pty.slave, n_pty.slave];
     options.detached = true;
-    let child: I.ChildProcess = childprocess.spawn(command, args, options);
+    let child: I.ChildProcess = childprocess.spawn(HELPER, [command].concat(args || []), options);
     child.on('exit', function(code: number|null, signal: number|null): void {
         console.log(code, signal);
     });
