@@ -1,4 +1,4 @@
-import * as net from 'net';
+import {Socket} from 'net';
 
 export interface ISize {
     cols?: number;
@@ -50,6 +50,6 @@ export interface IPtyFileDescriptors {
 }
 
 export interface IPtyChannels {
-    stdin: net.Socket;
-    stdout: net.Socket;
+    stdin: Socket;
+    stdout: Socket;
 }

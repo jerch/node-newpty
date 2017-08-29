@@ -2,9 +2,10 @@ import {IOpenPtyOptions, INativePty, IForkPtyResult, IWaitSymbols,
     IWaitStatus, ISize, IPtyFileDescriptors, IPtyChannels} from './interfaces';
 import * as fs from 'fs';
 import * as path from 'path';
-import * as net from 'net';
+import {Socket} from 'net';
 import ProcessEnv = NodeJS.ProcessEnv;
 import {Termios} from 'node-termios';
+import {EventEmitter} from 'events';
 
 // interface from C++
 export interface INative {
@@ -102,7 +103,38 @@ export function forkpty(opts: IOpenPtyOptions): IForkPtyResult {
 export function get_io_channels(fd: number): IPtyChannels {
     let channels: IPtyFileDescriptors = native.get_io_channels(fd);
     return {
-        stdin: new net.Socket({fd: channels.write, readable: false, writable: true}),
-        stdout: new net.Socket({fd: channels.read, readable: true, writable: false})
+        stdin: new Socket({fd: channels.write, readable: false, writable: true}),
+        stdout: new Socket({fd: channels.read, readable: true, writable: false})
     };
+}
+
+
+export function spawn(
+    path: string,
+    argv: string[],
+    env: ProcessEnv,
+    exit: Function,
+    options: IOpenPtyOptions): IPtyChannels
+{
+    let sub: IForkPtyResult = forkpty(options);
+    if (!sub.pid) {
+        let error = native.execve(path, argv, env);
+        process.stderr.write(error);
+        process.exit(-1);
+    }
+    native.waitpid(sub.pid, 0, function(status) {
+        exit(status);
+    });
+    return get_io_channels(sub.fd);
+}
+
+
+export class Terminal extends EventEmitter {
+        public stdin: Socket;
+        public stdout: Socket;
+        constructor() {
+            super();
+            // setup termios
+            //
+        }
 }
