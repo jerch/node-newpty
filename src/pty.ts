@@ -4,8 +4,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 import {Socket} from 'net';
 import ProcessEnv = NodeJS.ProcessEnv;
-import {Termios} from 'node-termios';
-import {EventEmitter} from 'events';
+import {Termios, ICTermios} from 'node-termios';
+import * as childprocess from 'child_process';
 
 // interface from C++
 export interface INative {
@@ -38,7 +38,7 @@ export const DEFAULT_ROWS: number = 24;
  * @param opts
  * @return {{master: number, slave: number, slavepath: string}}
  */
-export function openpty(opts: IOpenPtyOptions): INativePty {
+export function openpty(opts?: IOpenPtyOptions): INativePty {
     // get a pty master
     let master = native.openpt(fs.constants.O_RDWR | fs.constants.O_NOCTTY);
 
@@ -68,7 +68,7 @@ export function openpty(opts: IOpenPtyOptions): INativePty {
  * @param opts
  * @return {{pid: number, fd: number, slavepath: string}}
  */
-export function forkpty(opts: IOpenPtyOptions): IForkPtyResult {
+export function forkpty(opts?: IOpenPtyOptions): IForkPtyResult {
     let nativePty: INativePty = openpty(opts);
     let pid: number = native.fork();
     switch (pid) {
@@ -102,10 +102,18 @@ export function forkpty(opts: IOpenPtyOptions): IForkPtyResult {
  */
 export function get_io_channels(fd: number): IPtyChannels {
     let channels: IPtyFileDescriptors = native.get_io_channels(fd);
-    return {
-        stdin: new Socket({fd: channels.write, readable: false, writable: true}),
-        stdout: new Socket({fd: channels.read, readable: true, writable: false})
-    };
+
+    let stdin: Socket = new Socket({fd: channels.write, readable: false, writable: true});
+    stdin.on('end', function () {
+        try {fs.closeSync(channels.write);} catch (e){}
+    });
+
+    let stdout: Socket = new Socket({fd: channels.read, readable: true, writable: false});
+    stdout.on('end', function () {
+        try {fs.closeSync(channels.read);} catch (e){}
+    });
+
+    return {stdin: stdin, stdout: stdout};
 }
 
 
@@ -128,13 +136,34 @@ export function spawn(
     return get_io_channels(sub.fd);
 }
 
+export interface SpawnOptions extends childprocess.SpawnOptions {
+        termios?: ICTermios;
+        size?: ISize;
+}
 
-export class Terminal extends EventEmitter {
-        public stdin: Socket;
-        public stdout: Socket;
-        constructor() {
-            super();
-            // setup termios
-            //
-        }
+export interface ChildProcess extends childprocess.ChildProcess {
+        // TODO: add pty semantics to return value
+        master?: number;
+        slavepath?: string;
+}
+
+
+export function spawn2(
+    command: string,
+    args?: string[],
+    options?: SpawnOptions): ChildProcess
+{
+    options = options || {};
+    let pty_opts: IOpenPtyOptions = {termios: options.termios, size: options.size};
+    let n_pty: INativePty = openpty(pty_opts);
+    let channels: IPtyChannels = get_io_channels(n_pty.master);
+    options.stdio = [n_pty.slave, n_pty.slave, n_pty.slave];
+    options.detached = true;
+    let child: ChildProcess = childprocess.spawn(command, args, options);
+    fs.closeSync(n_pty.slave);
+    child.stdin = channels.stdin;
+    child.stdout = channels.stdout;
+    child.master = n_pty.master;
+    child.slavepath = n_pty.slavepath;
+    return child;
 }
