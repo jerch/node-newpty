@@ -18,7 +18,7 @@ export const DEFAULT_ROWS: number = 24;
  */
 export function openpty(opts?: I.OpenPtyOptions): I.NativePty {
     // get a pty master
-    let master = native.openpt(fs.constants.O_RDWR | fs.constants.O_NOCTTY);
+    let master = native.openpt(native.FD_FLAGS.O_RDWR | native.FD_FLAGS.O_NOCTTY);
 
     // grant and unlock
     native.grantpt(master);
@@ -26,7 +26,7 @@ export function openpty(opts?: I.OpenPtyOptions): I.NativePty {
 
     // open slave side
     let slavepath: string = native.ptsname(master);
-    let slave: number = fs.openSync(slavepath, fs.constants.O_RDWR | fs.constants.O_NOCTTY);
+    let slave: number = fs.openSync(slavepath, native.FD_FLAGS.O_RDWR | native.FD_FLAGS.O_NOCTTY);
     // solaris has to load extra drivers on the slave fd to get terminal semantics
     native.load_driver(slave);
 
@@ -145,7 +145,7 @@ export function spawn2(
     options.stdio = [n_pty.slave, n_pty.slave, n_pty.slave];
     options.detached = true;
     let child: I.ChildProcess = childprocess.spawn(command, args, options);
-    child.on('exit', function(code, signal) {
+    child.on('exit', function(code: number|null, signal: number|null): void {
         console.log(code, signal);
     });
     let channels: I.PtyChannels = get_io_channels(n_pty.master);

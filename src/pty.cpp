@@ -692,6 +692,15 @@ NAN_MODULE_INIT(init) {
     SET(waitsymbols, "WTRAPPED", Nan::New<Number>(WTRAPPED));
 #endif
     SET(target, "WAITSYMBOLS", waitsymbols);
+
+    // needed fd flags
+    Local<Object> fdflags = Nan::New<Object>();
+    SET(fdflags, "O_RDONLY", Nan::New<Number>(O_RDONLY));
+    SET(fdflags, "O_WRONLY", Nan::New<Number>(O_WRONLY));
+    SET(fdflags, "O_RDWR", Nan::New<Number>(O_RDWR));
+    SET(fdflags, "O_NOCTTY", Nan::New<Number>(O_NOCTTY));
+    SET(fdflags, "O_NONBLOCK", Nan::New<Number>(O_NONBLOCK));
+    SET(target, "FD_FLAGS", fdflags);
 }
 
 NODE_MODULE(pty, init)

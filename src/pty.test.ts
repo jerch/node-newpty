@@ -10,7 +10,7 @@ describe('native functions', () => {
     it('ptname/grantpt/unlockpt + open slave', () => {
         let master: number = -1;
         assert.doesNotThrow(() => {
-            master = pty.native.openpt(fs.constants.O_RDWR | fs.constants.O_NOCTTY);
+            master = pty.native.openpt(pty.native.FD_FLAGS.O_RDWR | pty.native.FD_FLAGS.O_NOCTTY);
             pty.native.grantpt(master);
             pty.native.unlockpt(master);
         });
@@ -22,7 +22,7 @@ describe('native functions', () => {
         assert.notEqual('', slavepath);
         let slave: number = -1;
         assert.doesNotThrow(() => {
-            slave = fs.openSync(slavepath, fs.constants.O_RDWR | fs.constants.O_NOCTTY);
+            slave = fs.openSync(slavepath, pty.native.FD_FLAGS.O_RDWR | pty.native.FD_FLAGS.O_NOCTTY);
         });
         assert.notEqual(-1, slave);
         fs.closeSync(master);
@@ -35,11 +35,11 @@ describe('native functions', () => {
         let master: number = -1;
         let slave: number = -1;
         assert.doesNotThrow(() => {
-            master = pty.native.openpt(fs.constants.O_RDWR | fs.constants.O_NOCTTY);
+            master = pty.native.openpt(pty.native.FD_FLAGS.O_RDWR | pty.native.FD_FLAGS.O_NOCTTY);
             pty.native.grantpt(master);
             pty.native.unlockpt(master);
             // slave must be opened to set size under BSDs
-            slave = fs.openSync(pty.native.ptsname(master), fs.constants.O_RDWR | fs.constants.O_NOCTTY);
+            slave = fs.openSync(pty.native.ptsname(master), pty.native.FD_FLAGS.O_RDWR | pty.native.FD_FLAGS.O_NOCTTY);
             // solaris needs this, empty call for others
             pty.native.load_driver(slave);
         });
@@ -75,11 +75,11 @@ describe('native functions', () => {
         let master: number = -1;
         let slave: number = -1;
         assert.doesNotThrow(() => {
-            master = pty.native.openpt(fs.constants.O_RDWR | fs.constants.O_NOCTTY);
+            master = pty.native.openpt(pty.native.FD_FLAGS.O_RDWR | pty.native.FD_FLAGS.O_NOCTTY);
             pty.native.grantpt(master);
             pty.native.unlockpt(master);
             // slave must be opened to set size under BSDs
-            slave = fs.openSync(pty.native.ptsname(master), fs.constants.O_RDWR | fs.constants.O_NOCTTY);
+            slave = fs.openSync(pty.native.ptsname(master), pty.native.FD_FLAGS.O_RDWR | pty.native.FD_FLAGS.O_NOCTTY);
             // solaris needs this, empty call for others
             pty.native.load_driver(slave);
             pty.native.set_size(master, 12, 13);

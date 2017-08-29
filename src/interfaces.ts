@@ -67,6 +67,14 @@ export interface ChildProcess extends childprocess.ChildProcess {
     slavepath?: string;
 }
 
+export interface FdFlags {
+    O_RDONLY: number;
+    O_WRONLY: number;
+    O_RDWR: number;
+    O_NOCTTY: number;
+    O_NONBLOCK: number;
+}
+
 export interface Native {
     fork(): number;
     execl(path: string, ...args: string[]): string;
@@ -86,4 +94,5 @@ export interface Native {
     get_io_channels(fd: number): PtyFileDescriptors;
     load_driver(fd: number): void;
     WAITSYMBOLS: WaitSymbols;
+    FD_FLAGS: FdFlags;
 }
