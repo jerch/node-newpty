@@ -101,11 +101,3 @@ describe('native functions', () => {
         fs.closeSync(slave);
     });
 });
-
-describe('openpty', () => {
-    it('', () => {});
-});
-
-describe('forkpty', () => {
-    it('', () => {});
-});

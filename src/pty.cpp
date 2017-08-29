@@ -1,22 +1,12 @@
 #include "nan.h"
 #include <termios.h>
 #include <sys/ioctl.h>
-#include <sys/wait.h>
 #include <unistd.h>
 #include <stdlib.h>
 #include <fcntl.h>
 #include <poll.h>
 
 // typical OS defines: https://sourceforge.net/p/predef/wiki/OperatingSystems/
-#if defined(__FreeBSD__)
-#include <libutil.h>
-#else
-#include <utmp.h>
-#endif
-
-#if defined(__APPLE__) && defined(__MACH__)
-#include <util.h>
-#endif
 
 #if defined(sun) || defined(__sun)
 # if defined(__SVR4) || defined(__svr4__)
@@ -48,29 +38,10 @@ obj->Set(Nan::New<String>(name).ToLocalChecked(), symbol)
   })
 #endif
 
-#ifndef login_tty
-int login_tty(int fd)
-{
-    setsid();
-    if (ioctl(fd, TIOCSCTTY, NULL) == -1)
-        return (-1);
-    dup2(fd, STDIN_FILENO);
-    dup2(fd, STDOUT_FILENO);
-    dup2(fd, STDERR_FILENO);
-	if (fd > 2)
-        close(fd);
-	return (0);
-}
-#endif
 
 using namespace node;
 using namespace v8;
 
-
-/**
- *  POSIX OS primitives
- *  TODO: maybe move to a separate module?
- */
 
 inline int nonblock(int fd) {
     int flags = fcntl(fd, F_GETFL, 0);
@@ -85,262 +56,6 @@ inline int cloexec(int fd) {
         return -1;
     return fcntl(fd, F_SETFD, flags | FD_CLOEXEC);
 }
-
-NAN_METHOD(js_fork) {
-    // see uv_spawn
-    uv_rwlock_wrlock(&uv_default_loop()->cloexec_lock);
-    pid_t pid = fork();
-    if (pid)  // release lock for error (-1) and parent (>0)
-        uv_rwlock_wrunlock(&uv_default_loop()->cloexec_lock);
-    info.GetReturnValue().Set(Nan::New<Number>(pid));
-}
-
-// exec* family
-NAN_METHOD(js_execl) {
-    int length = info.Length();
-    char *argv[length+1];
-    argv[length] = nullptr;
-    for (int i=0; i<length; ++i)
-        argv[i] = strdup(*Nan::Utf8String(info[i]->ToString()));
-    execv(argv[0], &argv[1]);
-    std::string error(strerror(errno));
-    for (int i=0; i<length; ++i)
-        free(argv[i]);
-    info.GetReturnValue().Set(
-        Nan::New<String>((std::string("execl failed - ") + error).c_str()).ToLocalChecked());
-}
-NAN_METHOD(js_execlp) {
-    int length = info.Length();
-    char *argv[length+1];
-    argv[length] = nullptr;
-    for (int i=0; i<length; ++i)
-        argv[i] = strdup(*Nan::Utf8String(info[i]->ToString()));
-    execvp(argv[0], &argv[1]);
-    std::string error(strerror(errno));
-    for (int i=0; i<length; ++i)
-        free(argv[i]);
-    info.GetReturnValue().Set(
-        Nan::New<String>((std::string("execlp failed - ") + error).c_str()).ToLocalChecked());
-}
-NAN_METHOD(js_execle) {
-    int length = info.Length();
-    if (!info[length-1]->IsObject())
-        return Nan::ThrowError("usage: pty.execle(path, arg1, ..., env)");
-    char *argv[length];
-    argv[length-1] = nullptr;
-    for (int i=0; i<length-1; ++i)
-        argv[i] = strdup(*Nan::Utf8String(info[i]->ToString()));
-    Local<Object> js_env = info[length-1]->ToObject();
-    Local<Array> env_keys = js_env->GetOwnPropertyNames();
-    char buf[4096];
-    char *env[env_keys->Length()];
-    env[env_keys->Length()-1] = nullptr;
-    for (unsigned int i=0; i<env_keys->Length(); ++i) {
-        Local<Value> key = env_keys->Get(i);
-        Local<Value> value = js_env->Get(key);
-        String::Utf8Value utf8_key(key);
-        String::Utf8Value utf8_value(value);
-        int res = snprintf(buf, 4096, "%s=%s", *utf8_key, *utf8_value);
-        assert(res < 4096);  // TODO: make size dynamic
-        env[i] = strdup(buf);
-    }
-    execve(argv[0], &argv[1], env);
-    std::string error(strerror(errno));
-    for (int i=0; i<length; ++i)
-        free(argv[i]);
-    for (unsigned int i=0; i<env_keys->Length(); ++i)
-        free(env[i]);
-    info.GetReturnValue().Set(
-        Nan::New<String>((std::string("execle failed - ") + error).c_str()).ToLocalChecked());
-}
-NAN_METHOD(js_execv) {
-    if (info.Length() != 2
-            || !info[0]->IsString()
-            || !info[1]->IsArray())
-        return Nan::ThrowError("usage: pty.execv(path, argv)");
-    Local<Array> js_argv = Local<Array>::Cast(info[1]);
-    char *argv[js_argv->Length()+2];
-    argv[js_argv->Length()+1] = nullptr;
-    argv[0] = strdup(*Nan::Utf8String(info[0]->ToString()));
-    for (unsigned int i=0; i<js_argv->Length(); ++i)
-        argv[i+1] = strdup(*Nan::Utf8String(js_argv->Get(i)));
-    execv(argv[0], &argv[1]);
-    std::string error(strerror(errno));
-    for (unsigned int i=0; i<js_argv->Length()+1; ++i)
-        free(argv[i]);
-    info.GetReturnValue().Set(
-        Nan::New<String>((std::string("execv failed - ") + error).c_str()).ToLocalChecked());
-}
-NAN_METHOD(js_execvp) {
-    if (info.Length() != 2
-            || !info[0]->IsString()
-            || !info[1]->IsArray())
-        return Nan::ThrowError("usage: pty.execvp(file, argv)");
-    Local<Array> js_argv = Local<Array>::Cast(info[1]);
-    char *argv[js_argv->Length()+2];
-    argv[js_argv->Length()+1] = nullptr;
-    argv[0] = strdup(*Nan::Utf8String(info[0]->ToString()));
-    for (unsigned int i=0; i<js_argv->Length(); ++i)
-        argv[i+1] = strdup(*Nan::Utf8String(js_argv->Get(i)));
-    execvp(argv[0], &argv[1]);
-    std::string error(strerror(errno));
-    for (unsigned int i=0; i<js_argv->Length()+1; ++i)
-        free(argv[i]);
-    info.GetReturnValue().Set(
-        Nan::New<String>((std::string("execvp failed - ") + error).c_str()).ToLocalChecked());
-}
-NAN_METHOD(js_execve) {
-    if (info.Length() != 3
-            || !info[0]->IsString()
-            || !info[1]->IsArray()
-            || !info[2]->IsObject())
-        return Nan::ThrowError("usage: pty.execve(path, argv, env)");
-    Local<Array> js_argv = Local<Array>::Cast(info[1]);
-    char *argv[js_argv->Length()+2];
-    argv[js_argv->Length()+1] = nullptr;
-    argv[0] = strdup(*Nan::Utf8String(info[0]->ToString()));
-    for (unsigned int i=0; i<js_argv->Length(); ++i)
-        argv[i+1] = strdup(*Nan::Utf8String(js_argv->Get(i)));
-    Local<Object> js_env = info[2]->ToObject();
-    Local<Array> env_keys = js_env->GetOwnPropertyNames();
-    char buf[4096];
-    char *env[env_keys->Length()];
-    env[env_keys->Length()-1] = nullptr;
-    for (unsigned int i=0; i<env_keys->Length(); ++i) {
-        Local<Value> key = env_keys->Get(i);
-        Local<Value> value = js_env->Get(key);
-        String::Utf8Value utf8_key(key);
-        String::Utf8Value utf8_value(value);
-        int res = snprintf(buf, 4096, "%s=%s", *utf8_key, *utf8_value);
-        assert(res < 4096);  // TODO: make size dynamic
-        env[i] = strdup(buf);
-    }
-    execve(argv[0], &argv[1], env);
-    std::string error(strerror(errno));
-    for (unsigned int i=0; i<js_argv->Length()+1; ++i)
-        free(argv[i]);
-    for (unsigned int i=0; i<env_keys->Length(); ++i)
-            free(env[i]);
-    info.GetReturnValue().Set(
-        Nan::New<String>((std::string("execve failed - ") + error).c_str()).ToLocalChecked());
-}
-
-
-/**
- *  Waitpid implementation
- *
- *  Runs `waitpid` in async mode and calls the callback function
- *  once a process fullfills the wait conditions. This is a full clone
- *  of the C waitpid function to be used in Javascript.
- *  See `man waitpid` for a detailed explanation of the C version.
- *  Call it from Javascript as `waitpid(pid, options, callback)`.
- *  `pid` can be:
- *      <-1         wait for any child process whose process group ID
- *                  is equal to the absolute value of pid
- *      -1          wait for any child process
- *      0           wait for any child process whose process group ID
- *                  is equal to that of the calling process
- *      >0          wait for the child whose process ID is equal to the value of pid
- *  `options` can be an OR mask of the following:
- *      0           grab all process exits
- *      WNOHANG     return immediately (non-blocking)
- *      WUNTRACED   return if a child has stopped
- *      WCONTINUED  return if a stopped child has been resumed by delivery of SIGCONT (not on NetBSD)
- *      WEXITED     returns true if the child terminated normally
- *                  by calling exit or _exit, or by returning from main() (not on OpenBSD)
- *      WSTOPPED    process got stopped by delivery of a signal (not on OpenBSD)
- *      WNOWAIT     leave the child in a waitable state; a later wait call can be used
- *                  to retrieve the child status information again (not on OpenBSD)
- *      WTRAPPED    report the status of selected processes which are being traced (BSD only)
- *
- *  Once a process meets the wait conditions of `options`
- *  the callback gets called with the wait status as the first parameter:
- *      {
- *          pid:            pid of the process that fullfilled the wait condition
- *          WIFEXITED:      true if the process exited
- *          WEXITSTATUS:    exit code or -1
- *          WIFSIGNALED:    true if the process got signalled
- *          WTERMSIG:       signal code or -1
- *          WCOREDUMP:      true if core dumped upon a signal or -1 (not on AIX and SunOS)
- *          WIFSTOPPED:     true if the process got stopped
- *          WSTOPSIG:       stop signal code or -1 if not stopped
- *          WIFCONTINUED:   true if process got continued (not on NetBSD)
- *      }
- */
-
-struct Wait {
-    Nan::Persistent<Function> cb;
-    pid_t pid;
-    int options;
-    uv_async_t async;
-    uv_thread_t tid;
-};
-
-inline void wait_thread(void *data) {
-    Wait *waiter = static_cast<Wait *>(data);
-    int wstatus;
-    pid_t res = waitpid(waiter->pid, &wstatus, waiter->options);
-    waiter->pid = res;
-    waiter->options = wstatus;
-    uv_async_send(&waiter->async);
-}
-
-inline void close_wait_thread(uv_handle_t *handle) {
-    uv_async_t *async = (uv_async_t *) handle;
-    Wait *waiter = static_cast<Wait *>(async->data);
-    delete waiter;
-}
-
-inline void after_wait_thread(uv_async_t *async) {
-    Nan::HandleScope scope;
-    Wait *waiter = static_cast<Wait *>(async->data);
-
-    int wstatus = waiter->options;
-    pid_t pid = waiter->pid;
-    Local<Object> obj = Nan::New<Object>();
-    SET(obj, "pid", Nan::New<Number>(pid));
-    SET(obj, "WIFEXITED", Nan::New<Boolean>(WIFEXITED(wstatus)));
-    SET(obj, "WEXITSTATUS", Nan::New<Number>(WIFEXITED(wstatus) ? WEXITSTATUS(wstatus): -1));
-    SET(obj, "WIFSIGNALED", Nan::New<Boolean>(WIFSIGNALED(wstatus)));
-    SET(obj, "WTERMSIG", Nan::New<Number>(WIFSIGNALED(wstatus) ? WTERMSIG(wstatus): -1));
-#ifdef WCOREDUMP  // not on AIX, SunOS
-    SET(obj, "WCOREDUMP", Nan::New<Boolean>(WIFSIGNALED(wstatus) ? WCOREDUMP(wstatus): -1));
-#endif
-    SET(obj, "WIFSTOPPED", Nan::New<Boolean>(WIFSTOPPED(wstatus)));
-    SET(obj, "WSTOPSIG", Nan::New<Number>(WIFSTOPPED(wstatus) ? WSTOPSIG(wstatus): -1));
-#ifdef WIFCONTINUED  // not on NetBSD
-    SET(obj, "WIFCONTINUED", Nan::New<Boolean>(WIFCONTINUED(wstatus)));
-#endif
-
-    Local<Value> argv[] = {obj};
-    Local<Function> cb = Nan::New<Function>(waiter->cb);
-    waiter->cb.Reset();
-    Nan::Callback(cb).Call(Nan::GetCurrentContext()->Global(), 1, argv);
-    uv_close((uv_handle_t *)async, close_wait_thread);
-}
-
-NAN_METHOD(js_waitpid) {
-    if (info.Length() != 3
-            || !info[0]->IsNumber()
-            || !info[1]->IsNumber()
-            || !info[2]->IsFunction())
-        return Nan::ThrowError("usage: pty.waitpid(pid, options, callback)");
-
-    pid_t pid = info[0]->IntegerValue();
-    int options = info[1]->IntegerValue();
-
-    Wait *waiter = new Wait();
-    waiter->pid = pid;
-    waiter->options = options;
-    waiter->cb.Reset(Local<Function>::Cast(info[2]));
-    waiter->async.data = waiter;
-
-    uv_async_init(uv_default_loop(), &waiter->async, after_wait_thread);
-    uv_thread_create(&waiter->tid, wait_thread, static_cast<void *>(waiter));
-
-    return info.GetReturnValue().SetUndefined();
-}
-
 
 /**
  * PTY and TTY primitives
@@ -389,16 +104,6 @@ NAN_METHOD(js_ptsname) {
         return Nan::ThrowError((std::string("ptsname failed - ") + error).c_str());
     }
     info.GetReturnValue().Set(Nan::New<String>(slavename).ToLocalChecked());
-}
-
-NAN_METHOD(js_login_tty) {
-    if (info.Length() != 1 || !(info[0]->IsNumber()))
-        return Nan::ThrowError("usage: login_tty(fd)");
-    if (login_tty(info[0]->IntegerValue())) {
-        std::string error(strerror(errno));
-        return Nan::ThrowError((std::string("login_tty failed - ") + error).c_str());
-    }
-    info.GetReturnValue().SetUndefined();
 }
 
 NAN_METHOD(js_pty_get_size) {
@@ -654,44 +359,14 @@ NAN_METHOD(load_driver) {
  * Exported symbols by the module
  */
 NAN_MODULE_INIT(init) {
-    SET(target, "fork", Nan::New<FunctionTemplate>(js_fork)->GetFunction());
-    SET(target, "execl", Nan::New<FunctionTemplate>(js_execl)->GetFunction());
-    SET(target, "execlp", Nan::New<FunctionTemplate>(js_execlp)->GetFunction());
-    SET(target, "execle", Nan::New<FunctionTemplate>(js_execle)->GetFunction());
-    SET(target, "execv", Nan::New<FunctionTemplate>(js_execv)->GetFunction());
-    SET(target, "execvp", Nan::New<FunctionTemplate>(js_execvp)->GetFunction());
-    SET(target, "execve", Nan::New<FunctionTemplate>(js_execve)->GetFunction());
-    SET(target, "waitpid", Nan::New<FunctionTemplate>(js_waitpid)->GetFunction());
     SET(target, "openpt", Nan::New<FunctionTemplate>(js_posix_openpt)->GetFunction());
     SET(target, "grantpt", Nan::New<FunctionTemplate>(js_grantpt)->GetFunction());
     SET(target, "unlockpt", Nan::New<FunctionTemplate>(js_unlockpt)->GetFunction());
     SET(target, "ptsname", Nan::New<FunctionTemplate>(js_ptsname)->GetFunction());
-    SET(target, "login_tty", Nan::New<FunctionTemplate>(js_login_tty)->GetFunction());
     SET(target, "get_size", Nan::New<FunctionTemplate>(js_pty_get_size)->GetFunction());
     SET(target, "set_size", Nan::New<FunctionTemplate>(js_pty_set_size)->GetFunction());
     SET(target, "get_io_channels", Nan::New<FunctionTemplate>(get_io_channels)->GetFunction());
     SET(target, "load_driver", Nan::New<FunctionTemplate>(load_driver)->GetFunction());
-
-    // waitpid symbols
-    Local<Object> waitsymbols = Nan::New<Object>();
-    SET(waitsymbols, "WNOHANG", Nan::New<Number>(WNOHANG));
-    SET(waitsymbols, "WUNTRACED", Nan::New<Number>(WUNTRACED));
-#ifdef WCONTINUED  // not on NetBSD
-    SET(waitsymbols, "WCONTINUED", Nan::New<Number>(WCONTINUED));
-#endif
-#ifdef WEXITED  // not on OpenBSD and NetBSD
-    SET(waitsymbols, "WEXITED", Nan::New<Number>(WEXITED));
-#endif
-#ifdef WSTOPPED  // not on OpenBSD
-    SET(waitsymbols, "WSTOPPED", Nan::New<Number>(WSTOPPED));
-#endif
-#ifdef WNOWAIT  // not on OpenBSD
-    SET(waitsymbols, "WNOWAIT", Nan::New<Number>(WNOWAIT));
-#endif
-#ifdef WTRAPPED  // BSDs only
-    SET(waitsymbols, "WTRAPPED", Nan::New<Number>(WTRAPPED));
-#endif
-    SET(target, "WAITSYMBOLS", waitsymbols);
 
     // needed fd flags
     Local<Object> fdflags = Nan::New<Object>();

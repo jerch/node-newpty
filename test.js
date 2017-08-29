@@ -1,13 +1,7 @@
 var pty = require('./lib/pty');
 var Termios = require('node-termios').Termios;
 
-var child = pty.spawn(
-    '/bin/bash',
-    ['/bin/bash', '-l'],
-    process.env,
-    function(code, signal){console.log('process ended:\n', code, signal);},
-    {termios: new Termios(0)}
-);
+var child = pty.spawn('bash', ['-l'], {env: process.env, termios: new Termios(0)});
 
 child.stdout.on('data', function(data) {
     console.log(data.toString());

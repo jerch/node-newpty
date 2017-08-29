@@ -43,30 +43,6 @@ export function openpty(opts?: I.OpenPtyOptions): I.NativePty {
 
 
 /**
- * forkpty - open a pty device and fork the process with the slave as controlling terminal.
- * @param opts
- * @return {{pid: number, fd: number, slavepath: string}}
- */
-export function forkpty(opts?: I.OpenPtyOptions): I.ForkPtyResult {
-    let nativePty: I.NativePty = openpty(opts);
-    let pid: number = native.fork();
-    switch (pid) {
-        case -1:  // error
-            fs.closeSync(nativePty.master);
-            fs.closeSync(nativePty.slave);
-            throw new Error('error running forkpty');
-        case 0:   // child
-            fs.closeSync(nativePty.master);
-            native.login_tty(nativePty.slave);
-            return {pid: 0, fd: nativePty.slave, slavepath: nativePty.slavepath};
-        default:  // parent
-            fs.closeSync(nativePty.slave);
-            return {pid: pid, fd: nativePty.master, slavepath: nativePty.slavepath};
-    }
-}
-
-
-/**
  * get_io_channels - get stdin/stdout sockets for the pty master fd.
  *
  * This functions spawns additional OS pipes and forwards data
@@ -104,29 +80,6 @@ export function get_io_channels(fd: number, close_master: boolean = true): I.Pty
 }
 
 
-// TODO: make this compatible with node-pty API
-export function spawn(
-    path: string,
-    argv: string[],
-    env: NodeJS.ProcessEnv,
-    exit: Function,
-    options: I.OpenPtyOptions): I.PtyChannels
-{
-    let sub: I.ForkPtyResult = forkpty(options);
-    if (!sub.pid) {
-        let error = native.execve(path, argv, env);
-        process.stderr.write(error);
-        process.exit(-1);
-    }
-    native.waitpid(sub.pid, 0, function(status: I.WaitStatus): void {
-        let code: number = (status.WIFEXITED) ? status.WEXITSTATUS : null;
-        let signal: number = (status.WIFSIGNALED) ? status.WTERMSIG : null;
-        exit(code, signal);
-    });
-    return get_io_channels(sub.fd); // TODO: create terminal/process type
-}
-
-
 export const HELPER: string = path.join(__dirname, '..', 'build', 'Release', 'helper');
 
 /**
@@ -136,25 +89,34 @@ export const HELPER: string = path.join(__dirname, '..', 'build', 'Release', 'he
  * @param options
  * @return {ChildProcess}
  */
-export function spawn2(
+export function spawn(
     command: string,
     args?: string[],
     options?: I.SpawnOptions): I.ChildProcess
 {
     options = options || {};
-    let pty_opts: I.OpenPtyOptions = {termios: options.termios, size: options.size};
-    let n_pty: I.NativePty = openpty(pty_opts);
+
+    // open a new pty
+    let n_pty: I.NativePty = openpty({termios: options.termios, size: options.size});
+
+    // prepare child_process:
+    // - set IO channels to the slave end
+    // - set child as detached to get `setsid`
+    // - insert HELPER as command to get slave as controlling terminal
     options.stdio = [n_pty.slave, n_pty.slave, n_pty.slave];
     options.detached = true;
     let child: I.ChildProcess = childprocess.spawn(HELPER, [command].concat(args || []), options);
-    child.on('exit', function(code: number|null, signal: number|null): void {
-        console.log(code, signal);
-    });
+
+    // get IO channels and attach them to the ChildProcess
     let channels: I.PtyChannels = get_io_channels(n_pty.master);
     child.stdin = channels.stdin;
     child.stdout = channels.stdout;
+
+    // append important pty symbols to the ChildProcess - TODO: add termios and size getters/setters
     child.master = n_pty.master;
     child.slavepath = n_pty.slavepath;
+
+    // finally close slave fd
     fs.closeSync(n_pty.slave);
     return child;
 }
