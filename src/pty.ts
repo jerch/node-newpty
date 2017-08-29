@@ -94,7 +94,8 @@ export function get_io_channels(fd: number, close_master: boolean = true): I.Pty
     let stdout: Socket = new Socket({fd: channels.read, readable: true, writable: false});
     stdout.on('end', function (): void {
         try {
-            fs.closeSync(fd);
+            if (close_master)
+                fs.closeSync(fd);
             fs.closeSync(channels.read);
         } catch (e) {}
     });
