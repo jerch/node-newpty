@@ -43,7 +43,7 @@ describe('native functions', () => {
             // solaris needs this, empty call for others
             pty.native.load_driver(slave);
         });
-        let size: Interfaces.ISize = {cols: -1, rows: -1};
+        let size: Interfaces.Size = {cols: -1, rows: -1};
         assert.doesNotThrow(() => {
             size = pty.native.set_size(master, 12, 13);
         });
@@ -84,9 +84,9 @@ describe('native functions', () => {
             pty.native.load_driver(slave);
             pty.native.set_size(master, 12, 13);
         });
-        let size_master: Interfaces.ISize = {cols: -1, rows: -1};
-        let size_slave: Interfaces.ISize = {cols: -1, rows: -1};
-        let size: Interfaces.ISize = {cols: 12, rows: 13};
+        let size_master: Interfaces.Size = {cols: -1, rows: -1};
+        let size_slave: Interfaces.Size = {cols: -1, rows: -1};
+        let size: Interfaces.Size = {cols: 12, rows: 13};
         assert.doesNotThrow(() => {
             size_master = pty.native.get_size(master);
         });

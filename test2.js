@@ -4,7 +4,7 @@ var child = pty.spawn(
     '/bin/bash',
     ['/bin/bash', '-l'],
     process.env,
-    function(status){console.log('process ended:\n', status);},
+    function(code, signal){console.log('process ended:\n', code, signal);},
     {}
 );
 
