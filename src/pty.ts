@@ -2,7 +2,8 @@ import * as I from './interfaces';
 import * as fs from 'fs';
 import * as path from 'path';
 import {Socket} from 'net';
-import {Termios} from 'node-termios';
+import {Termios, ICTermios} from 'node-termios';
+import {EventEmitter} from 'events';
 import * as childprocess from 'child_process';
 
 export const native: I.Native = require(path.join('..', 'build', 'Release', 'pty.node'));
@@ -120,4 +121,135 @@ export function spawn(
     // finally close slave fd
     fs.closeSync(n_pty.slave);
     return child;
+}
+
+
+export class RawPty {
+    private _nativePty: I.NativePty;
+    constructor(options?: I.OpenPtyOptions) {
+        this._nativePty = openpty(options);
+    }
+    get master_fd(): number {
+        return this._nativePty.master;
+    }
+    get slave_fd(): number {
+        return this._nativePty.slave;
+    }
+    close(): void {
+        if (this._nativePty.master !== -1)
+            fs.closeSync(this._nativePty.master);
+        if (this._nativePty.slave !== -1)
+            fs.closeSync(this._nativePty.slave);
+        this._nativePty.master = -1;
+        this._nativePty.slave = -1;
+        this._nativePty.slavepath = '';
+    }
+    close_slave(): void {
+        if (this._nativePty.slave !== -1)
+            fs.closeSync(this._nativePty.slave);
+        this._nativePty.slave = -1;
+    }
+    // NOTE: size should be applied to master (slave not working on solaris)
+    get_size(): I.Size {
+        if (this._nativePty.master !== -1)
+            return native.get_size(this._nativePty.master);
+        throw new Error('pty is not open');
+    }
+    set_size(cols: number, rows: number): I.Size {
+        if (this._nativePty.master !== -1) {
+            if (cols > 0 && rows > 0)
+                return native.set_size(this._nativePty.master, cols, rows);
+            throw new Error('cols/rows must be greater 0');
+        }
+        throw new Error('pty is not open');
+    }
+    resize(cols: number, rows: number): void {
+        this.set_size(cols, rows);
+    }
+    get columns(): number {
+        return this.get_size().cols;
+    }
+    set columns(cols: number) {
+        this.resize(cols, this.get_size().rows);
+    }
+    get rows(): number {
+        return this.get_size().rows;
+    }
+    set rows(rows: number) {
+        this.resize(this.get_size().cols, rows);
+    }
+    // NOTE: termios should be applied to slave (master not working on solaris)
+    get_termios(): ICTermios {
+        if (this._nativePty.slave !== -1)
+            return new Termios(this._nativePty.slave);
+        if (process.platform === 'sunos') {
+            let slave: number = fs.openSync(this._nativePty.slavepath,
+                native.FD_FLAGS.O_RDWR | native.FD_FLAGS.O_NOCTTY);
+            let termios: ICTermios = new Termios(slave);
+            fs.closeSync(slave);
+            return termios;
+        }
+        return new Termios(this._nativePty.master);
+    }
+    set_termios(termios: ICTermios, action?: number): void {
+        if (this._nativePty.slave !== -1) {
+            termios.writeTo(this._nativePty.slave, action);
+            return;
+        }
+        if (process.platform === 'sunos') {
+            let slave: number = fs.openSync(this._nativePty.slavepath,
+                native.FD_FLAGS.O_RDWR | native.FD_FLAGS.O_NOCTTY);
+            termios.writeTo(slave, action);
+            fs.closeSync(slave);
+        } else
+            termios.writeTo(this._nativePty.master, action);
+    }
+}
+
+
+class UnixTerminal extends EventEmitter implements I.ITerminal {
+    constructor() {
+        super();
+    }
+    get process(): string {
+        // TODO: to be implemented
+        return '';
+    }
+    get pid(): number {
+        // TODO: to be implemented
+        return -1;
+    }
+    get master(): Socket {
+        // TODO: should not be exported directly
+        return new Socket();
+    }
+    get slave(): Socket {
+        // TODO: should not be open on parent side once a child was launched
+        return new Socket();
+    }
+    write(data: string): void {}
+    resize(cols: number, rows: number): void {}
+    destroy(): void {}
+    kill(signal?: string): void {}
+    setEncoding(encoding: string): void {}
+    resume(): void {}
+    pause(): void {}
+    addListener(eventName: string, listener: (...args: any[]) => any): this {
+        return this;
+    }
+    on(eventName: string, listener: (...args: any[]) => any): this {
+        return this;
+    }
+    listeners(eventName: string): Function[] {
+        return [];
+    }
+    removeListener(eventName: string, listener: (...args: any[]) => any): this {
+        return this;
+    }
+    removeAllListeners(eventName: string): this {
+        return this;
+    }
+    once(eventName: string, listener: (...args: any[]) => any): this {
+        return this;
+    }
 }
