@@ -81,6 +81,7 @@ export function get_io_channels(fd: number, close_master: boolean = true): I.Pty
 
 
 export const HELPER: string = path.join(__dirname, '..', 'build', 'Release', 'helper');
+export const STDERR_TESTER: string = path.join(__dirname, '..', 'build', 'Release', 'stderr_tester');
 
 /**
  * spawn2 - child_process based version.
@@ -103,7 +104,7 @@ export function spawn(
     // - set IO channels to the slave end
     // - set child as detached to get `setsid`
     // - insert HELPER as command to get slave as controlling terminal
-    options.stdio = [n_pty.slave, n_pty.slave, n_pty.slave];
+    options.stdio = [n_pty.slave, n_pty.slave, (options.stderr) ? 'pipe' : n_pty.slave];
     options.detached = true;
     let child: I.ChildProcess = childprocess.spawn(HELPER, [command].concat(args || []), options);
 

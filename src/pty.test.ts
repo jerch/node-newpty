@@ -5,6 +5,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as pty from './pty';
 import * as Interfaces from './interfaces';
+import {Termios} from 'node-termios';
 
 describe('native functions', () => {
     it('ptname/grantpt/unlockpt + open slave', () => {
@@ -99,5 +100,58 @@ describe('native functions', () => {
         }
         fs.closeSync(master);
         fs.closeSync(slave);
+    });
+});
+describe('spawn', () => {
+    it('stderr redirection of child', (done) => {
+        let child: Interfaces.ChildProcess = pty.spawn(pty.STDERR_TESTER, [],
+            {env: process.env, termios: new Termios(0), stderr: true});
+        let stdout_buf: string = '';
+        let stderr_buf: string = '';
+        child.stdout.on('data', (data) => {
+            stdout_buf += data.toString();
+        });
+        child.stderr.on('data', (data) => {
+            stderr_buf += data.toString();
+        });
+        child.stdout.on('close', () => {
+            assert.equal(stdout_buf, 'Hello stdout.');
+            assert.equal(stderr_buf, 'Hello stderr.');
+            done();
+        });
+    });
+    it('stderr redirection of grandchild', (done) => {
+        let child: Interfaces.ChildProcess = pty.spawn('bash', ['-l'],
+            {env: process.env, termios: new Termios(0), stderr: true});
+        let stderr_buf: string = '';
+        child.stdout.on('data', (data) => {
+            // we must consume stdout data to avoid blocking...
+        });
+        child.stderr.on('data', (data) => {
+            stderr_buf += data.toString();
+        });
+        child.stdout.on('close', () => {
+            assert.equal(stderr_buf, 'Hello stderr.');
+            done();
+        });
+        setTimeout(() => { child.stdin.write(pty.STDERR_TESTER + '\r'); }, 200);
+        setTimeout(() => { child.stdin.write('exit\r'); }, 500);
+    });
+    it('stderr redirection of great-grandchild', (done) => {
+        let child: Interfaces.ChildProcess = pty.spawn('bash', ['-l'],
+            {env: process.env, termios: new Termios(0), stderr: true});
+        let stderr_buf: string = '';
+        child.stdout.on('data', (data) => {
+            // we must consume stdout data to avoid blocking...
+        });
+        child.stderr.on('data', (data) => {
+            stderr_buf += data.toString();
+        });
+        child.stdout.on('close', () => {
+            assert.equal(stderr_buf, 'Hello stderr.');
+            done();
+        });
+        setTimeout(() => { child.stdin.write('bash -c ' + pty.STDERR_TESTER + '\r'); }, 200);
+        setTimeout(() => { child.stdin.write('exit\r'); }, 500);
     });
 });

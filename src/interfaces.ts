@@ -29,8 +29,12 @@ export interface  PtyChannels {
 }
 
 export interface SpawnOptions extends childprocess.SpawnOptions {
+    // termios settings applied to the new pty device
     termios?: ICTermios;
+    // size settings applied to the new pty device
     size?: Size;
+    // additional stderr pipe (CAVE: might not work correctly with every child process)
+    stderr?: boolean;
 }
 
 export interface ChildProcess extends childprocess.ChildProcess {

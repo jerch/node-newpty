@@ -10,6 +10,11 @@
             'target_name': 'helper',
             'type': 'executable',
             'sources': ['src/helper.cpp']
+        },
+        {
+            'target_name': 'stderr_tester',
+            'type': 'executable',
+            'sources': ['src/stderr_tester.cpp']
         }
     ],
 }
