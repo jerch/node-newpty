@@ -188,18 +188,13 @@ export class RawPty {
     // (slave not working on solaris)
     public get_size(): I.Size {
         this._is_usable();
-        if (this._nativePty.master !== -1)
-            return native.get_size(this._nativePty.master);
-        throw new Error('pty is not open');
+        return native.get_size(this._nativePty.master);
     }
     public set_size(cols: number, rows: number): I.Size {
         this._is_usable();
-        if (this._nativePty.master !== -1) {
-            if (cols > 0 && rows > 0)
-                return native.set_size(this._nativePty.master, cols, rows);
-            throw new Error('cols/rows must be greater 0');
-        }
-        throw new Error('pty is not open');
+        if (cols > 0 && rows > 0)
+            return native.set_size(this._nativePty.master, cols, rows);
+        throw new Error('cols/rows must be greater 0');
     }
     public resize(cols: number, rows: number): void {
         this._is_usable();
@@ -230,6 +225,7 @@ export class RawPty {
         if (process.platform === 'sunos') {
             let slave: number = fs.openSync(this._nativePty.slavepath,
                 native.FD_FLAGS.O_RDWR | native.FD_FLAGS.O_NOCTTY);
+            native.load_driver(slave);
             let termios: ICTermios = new Termios(slave);
             fs.closeSync(slave);
             return termios;
@@ -245,6 +241,7 @@ export class RawPty {
         if (process.platform === 'sunos') {
             let slave: number = fs.openSync(this._nativePty.slavepath,
                 native.FD_FLAGS.O_RDWR | native.FD_FLAGS.O_NOCTTY);
+            native.load_driver(slave);
             termios.writeTo(slave, action);
             fs.closeSync(slave);
         } else
