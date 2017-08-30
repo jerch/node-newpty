@@ -195,8 +195,6 @@ export class RawPty {
         }
         this._nativePty.slave = -1;
     }
-    // NOTE: size should be applied to master only
-    // (slave not working on solaris)
     public get_size(): I.Size {
         this._is_usable();
         return native.get_size(this._nativePty.master);
@@ -227,8 +225,6 @@ export class RawPty {
         this._is_usable();
         this.resize(this.get_size().cols, rows);
     }
-    // NOTE: termios should be applied to slave only
-    // (master not working on solaris)
     public get_termios(): ICTermios {
         this._is_usable();
         // should always work on slave end
@@ -238,7 +234,7 @@ export class RawPty {
         if (process.platform === 'sunos') {
             return new Termios(this._shadowSlave);
         }
-        // fall trough to master end
+        // fall through to master end (not working on solaris)
         return new Termios(this._nativePty.master);
     }
     public set_termios(termios: ICTermios, action?: number): void {
@@ -253,7 +249,7 @@ export class RawPty {
             termios.writeTo(this._shadowSlave, action);
             return;
         }
-        // fall trough to master end
+        // fall through to master end (not working on solaris)
         termios.writeTo(this._nativePty.master, action);
     }
 }
