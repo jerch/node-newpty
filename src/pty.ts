@@ -140,6 +140,7 @@ export function spawn(
  * Once the master end is closed a pty is not usable anymore,
  * therefore after a `close()` any other call will fail.
  */
+// FIXME: solaris maintains a slave fd all the time, needs fix in poller!!!!!
 export class RawPty {
     private _nativePty: I.NativePty;
     private _shadowSlave: number;
@@ -188,6 +189,7 @@ export class RawPty {
     public close_slave(): void {
         this._is_usable();
         if (this._nativePty.slave !== -1) {
+            // slave cannot be closed on solaris
             if (process.platform !== 'sunos')
                 fs.closeSync(this._nativePty.slave);
         }
@@ -229,32 +231,30 @@ export class RawPty {
     // (master not working on solaris)
     public get_termios(): ICTermios {
         this._is_usable();
+        // should always work on slave end
         if (this._nativePty.slave !== -1)
             return new Termios(this._nativePty.slave);
+        // special case for solaris
         if (process.platform === 'sunos') {
-            let slave: number = fs.openSync(this._nativePty.slavepath,
-                native.FD_FLAGS.O_RDWR | native.FD_FLAGS.O_NOCTTY);
-            native.load_driver(slave);
-            let termios: ICTermios = new Termios(slave);
-            fs.closeSync(slave);
-            return termios;
+            return new Termios(this._shadowSlave);
         }
+        // fall trough to master end
         return new Termios(this._nativePty.master);
     }
     public set_termios(termios: ICTermios, action?: number): void {
         this._is_usable();
+        // should always work on slave end
         if (this._nativePty.slave !== -1) {
             termios.writeTo(this._nativePty.slave, action);
             return;
         }
+        // special case for solaris
         if (process.platform === 'sunos') {
-            let slave: number = fs.openSync(this._nativePty.slavepath,
-                native.FD_FLAGS.O_RDWR | native.FD_FLAGS.O_NOCTTY);
-            native.load_driver(slave);
-            termios.writeTo(slave, action);
-            fs.closeSync(slave);
-        } else
-            termios.writeTo(this._nativePty.master, action);
+            termios.writeTo(this._shadowSlave, action);
+            return;
+        }
+        // fall trough to master end
+        termios.writeTo(this._nativePty.master, action);
     }
 }
 
