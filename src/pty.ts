@@ -5,6 +5,7 @@ import {Socket} from 'net';
 import {Termios, ICTermios} from 'node-termios';
 import {EventEmitter} from 'events';
 import * as childprocess from 'child_process';
+import {platform} from "os";
 
 export const native: I.Native = require(path.join('..', 'build', 'Release', 'pty.node'));
 
@@ -139,11 +140,18 @@ export function spawn(
  * The master is more restrictive (e.g. not allowed to be duped on some OS).
  * Once the master end is closed a pty is not usable anymore,
  * therefore after a `close()` any other call will fail.
+ *
+ * NOTE: Solaris behaves very different regarding pty semantics.
+ * On Solaris a pty is a simple pipe where tty semantics get loaded onto the slave end.
+ * Other than on BSDs or Linux systems that slave end must stay open to get
+ * the right values for size and termios.
+ * Therefore the class always holds a slave file descriptor on Solaris.
+ * TODO: needs explanation
  */
 // FIXME: solaris maintains a slave fd all the time, needs fix in poller!!!!!
 export class RawPty {
     private _nativePty: I.NativePty;
-    private _shadowSlave: number;
+    private _solarisShadowSlave: number;
     private _is_usable(): void {
         if (this._nativePty.master === -1)
             throw new Error('pty is destroyed');
@@ -151,7 +159,7 @@ export class RawPty {
     constructor(options?: I.RawPtyOptions) {
         this._nativePty = openpty(options);
         if (process.platform === 'sunos')
-            this._shadowSlave = this._nativePty.slave;
+            this._solarisShadowSlave = this._nativePty.slave;
     }
     public get master_fd(): number {
         this._is_usable();
@@ -171,6 +179,8 @@ export class RawPty {
             fs.closeSync(this._nativePty.master);
         if (this._nativePty.slave !== -1)
             try { fs.closeSync(this._nativePty.slave); } catch (e) {}
+        if (process.platform === 'sunos')
+            try { fs.closeSync(this._solarisShadowSlave); } catch (e) {}
         this._nativePty.master = -1;
         this._nativePty.slave = -1;
         this._nativePty.slavepath = '';
@@ -182,7 +192,7 @@ export class RawPty {
                 this._nativePty.slave = fs.openSync(this._nativePty.slavepath,
                     native.FD_FLAGS.O_RDWR | native.FD_FLAGS.O_NOCTTY);
             else
-                this._nativePty.slave = this._shadowSlave;
+                this._nativePty.slave = this._solarisShadowSlave;
         }
         return this._nativePty.slave;
     }
@@ -232,7 +242,7 @@ export class RawPty {
             return new Termios(this._nativePty.slave);
         // special case for solaris
         if (process.platform === 'sunos') {
-            return new Termios(this._shadowSlave);
+            return new Termios(this._solarisShadowSlave);
         }
         // fall through to master end (not working on solaris)
         return new Termios(this._nativePty.master);
@@ -246,7 +256,7 @@ export class RawPty {
         }
         // special case for solaris
         if (process.platform === 'sunos') {
-            termios.writeTo(this._shadowSlave, action);
+            termios.writeTo(this._solarisShadowSlave, action);
             return;
         }
         // fall through to master end (not working on solaris)
