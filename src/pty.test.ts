@@ -5,7 +5,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as pty from './pty';
 import * as Interfaces from './interfaces';
-import {Termios} from 'node-termios';
+import {Termios, ICTermios} from 'node-termios';
 
 describe('native functions', () => {
     it('ptname/grantpt/unlockpt + open slave', () => {
@@ -153,5 +153,108 @@ describe('spawn', () => {
         });
         setTimeout(() => { child.stdin.write('bash -c ' + pty.STDERR_TESTER + '\r'); }, 200);
         setTimeout(() => { child.stdin.write('exit\r'); }, 500);
+    });
+});
+describe('RawPty', () => {
+    it('primitive getter', () => {
+        let rawPty: pty.RawPty = new pty.RawPty();
+        assert.notEqual(rawPty.master_fd, -1);
+        assert.notEqual(rawPty.slave_fd, -1);
+        assert.notEqual(rawPty.slavepath, '');
+        rawPty.close();
+    });
+    it('close', () => {
+        // disable any access after a close
+        let rawPty: pty.RawPty = new pty.RawPty();
+        rawPty.close();
+        let attributes: string[] = Object.getOwnPropertyNames(Object.getPrototypeOf(rawPty));
+        for (let i = 0; i < attributes.length; ++i) {
+            if (attributes[i] === 'constructor')
+                continue;
+            if (attributes[i] === '_is_usable')
+                continue;
+            assert.throws(() => {
+                let a: any = rawPty[attributes[i]];
+                if (typeof a === 'function')
+                    a();
+            });
+        }
+    });
+    it('open/close slave', () => {
+        let rawPty: pty.RawPty = new pty.RawPty();
+        // after open a slave should be available
+        assert.notEqual(rawPty.open_slave(), -1);
+        // consecutive open calls should not open different fds
+        assert.equal(rawPty.open_slave(), rawPty.open_slave());
+        rawPty.close_slave();
+        // no slave open
+        assert.equal(rawPty.slave_fd, -1);
+        // new slave opened
+        assert.notEqual(rawPty.open_slave(), -1);
+        rawPty.close();
+    });
+    it('get_size, cols/rows getter', () => {
+        let rawPty: pty.RawPty = new pty.RawPty();
+        let size1: Interfaces.Size = rawPty.get_size();
+        assert.deepEqual(size1, {cols: pty.DEFAULT_COLS, rows: pty.DEFAULT_ROWS});
+        rawPty.close();
+        rawPty = new pty.RawPty({size: {cols: 50, rows: 100}});
+        size1 = rawPty.get_size();
+        assert.deepEqual(size1, {cols: 50, rows: 100});
+        // size should not interfere with slave state
+        rawPty.close_slave();
+        let size2: Interfaces.Size = rawPty.get_size();
+        assert.deepEqual(size1, size2);
+        assert.equal(rawPty.columns, size1.cols);
+        assert.equal(rawPty.rows, size1.rows);
+        rawPty.close();
+    });
+    it('set_size, resize, cols/rows getter and setter', () => {
+        let rawPty: pty.RawPty = new pty.RawPty();
+        let size1: Interfaces.Size = rawPty.set_size(100, 200);
+        assert.deepEqual(size1, {cols: 100, rows: 200});
+        // size should not interfere with slave state
+        rawPty.close_slave();
+        // set --> get should be equal
+        let size2: Interfaces.Size = rawPty.set_size(200, 400);
+        assert.deepEqual(size2, {cols: 200, rows: 400});
+        assert.deepEqual(size2, rawPty.get_size());
+        // resize --> get should be equal
+        rawPty.resize(400, 200);
+        assert.deepEqual({cols: 400, rows: 200}, rawPty.get_size());
+        // getter
+        assert.equal(rawPty.columns, 400);
+        assert.equal(rawPty.rows, 200);
+        // setter
+        rawPty.columns = 800;
+        rawPty.rows = 400;
+        assert.deepEqual(rawPty.get_size(), {cols: 800, rows: 400});
+        // do not allow insane values
+        assert.throws(() => { rawPty.resize(-1, 50); });
+        assert.throws(() => { rawPty.resize(50, -1); });
+        assert.throws(() => { rawPty.resize(0, 50); });
+        assert.throws(() => { rawPty.resize(50, 0); });
+        rawPty.close();
+    });
+    it('get/set termios', () => {
+        // load termios from stdin
+        let rawPty: pty.RawPty = new pty.RawPty({termios: new Termios(0)});
+        let termios: ICTermios = rawPty.get_termios();
+        assert.deepEqual(termios, new Termios(0));
+        // termios should not interfere with slave state (reopens slave on solaris)
+        rawPty.close_slave();
+        assert.deepEqual(termios, rawPty.get_termios());
+        // set termios
+        termios.c_iflag = 0;
+        rawPty.set_termios(termios);
+        assert.deepEqual(termios, rawPty.get_termios());
+        assert.notDeepEqual(termios, new Termios(0));
+        // termios should not interfere with slave state
+        rawPty.open_slave();
+        termios.c_oflag = 0;
+        rawPty.set_termios(termios);
+        assert.deepEqual(termios, rawPty.get_termios());
+        assert.notDeepEqual(termios, new Termios(0));
+        rawPty.close();
     });
 });
