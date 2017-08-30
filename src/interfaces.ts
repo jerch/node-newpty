@@ -12,6 +12,8 @@ export interface OpenPtyOptions {
     size?: Size;
 }
 
+export type RawPtyOptions = OpenPtyOptions;
+
 export interface NativePty {
     master: number;
     slave: number;

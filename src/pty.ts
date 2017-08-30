@@ -123,19 +123,46 @@ export function spawn(
     return child;
 }
 
-
+/**
+ * RawPty - class to hold a pty device.
+ *
+ * Main purpose of this class is to encapsulate termios settings,
+ * size settings and the file descriptor handling in a platform
+ * independent way.
+ *
+ * Access the file descriptors via their getters (`master_fd` and `slave_fd`)
+ * to spot changes of the state correctly (-1 for illegal).
+ *
+ * NOTE: The slave side of a pty can be opened several times
+ * across different processes. This usually happens by opening
+ * the slave pathname (`slavepath`).
+ * The master is more restrictive (e.g. not allowed to be duped on some OS).
+ * Once the master end is closed a pty is not usable anymore,
+ * therefore after a `close()` any other call will fail.
+ */
 export class RawPty {
     private _nativePty: I.NativePty;
-    constructor(options?: I.OpenPtyOptions) {
+    private _is_usable(): void {
+        if (this._nativePty.master === -1)
+            throw new Error('pty is destroyed');
+    }
+    constructor(options?: I.RawPtyOptions) {
         this._nativePty = openpty(options);
     }
-    get master_fd(): number {
+    public get master_fd(): number {
+        this._is_usable();
         return this._nativePty.master;
     }
-    get slave_fd(): number {
+    public get slave_fd(): number {
+        this._is_usable();
         return this._nativePty.slave;
     }
-    close(): void {
+    public get slavepath(): string {
+        this._is_usable();
+        return this._nativePty.slavepath;
+    }
+    public close(): void {
+        this._is_usable();
         if (this._nativePty.master !== -1)
             fs.closeSync(this._nativePty.master);
         if (this._nativePty.slave !== -1)
@@ -144,18 +171,29 @@ export class RawPty {
         this._nativePty.slave = -1;
         this._nativePty.slavepath = '';
     }
-    close_slave(): void {
+    public open_slave(): number {
+        this._is_usable();
+        if (this._nativePty.slave === -1)
+            this._nativePty.slave = fs.openSync(this._nativePty.slavepath,
+                native.FD_FLAGS.O_RDWR | native.FD_FLAGS.O_NOCTTY);
+        return this._nativePty.slave;
+    }
+    public close_slave(): void {
+        this._is_usable();
         if (this._nativePty.slave !== -1)
             fs.closeSync(this._nativePty.slave);
         this._nativePty.slave = -1;
     }
-    // NOTE: size should be applied to master (slave not working on solaris)
-    get_size(): I.Size {
+    // NOTE: size should be applied to master only
+    // (slave not working on solaris)
+    public get_size(): I.Size {
+        this._is_usable();
         if (this._nativePty.master !== -1)
             return native.get_size(this._nativePty.master);
         throw new Error('pty is not open');
     }
-    set_size(cols: number, rows: number): I.Size {
+    public set_size(cols: number, rows: number): I.Size {
+        this._is_usable();
         if (this._nativePty.master !== -1) {
             if (cols > 0 && rows > 0)
                 return native.set_size(this._nativePty.master, cols, rows);
@@ -163,23 +201,30 @@ export class RawPty {
         }
         throw new Error('pty is not open');
     }
-    resize(cols: number, rows: number): void {
+    public resize(cols: number, rows: number): void {
+        this._is_usable();
         this.set_size(cols, rows);
     }
-    get columns(): number {
+    public get columns(): number {
+        this._is_usable();
         return this.get_size().cols;
     }
-    set columns(cols: number) {
+    public set columns(cols: number) {
+        this._is_usable();
         this.resize(cols, this.get_size().rows);
     }
-    get rows(): number {
+    public get rows(): number {
+        this._is_usable();
         return this.get_size().rows;
     }
-    set rows(rows: number) {
+    public set rows(rows: number) {
+        this._is_usable();
         this.resize(this.get_size().cols, rows);
     }
-    // NOTE: termios should be applied to slave (master not working on solaris)
-    get_termios(): ICTermios {
+    // NOTE: termios should be applied to slave only
+    // (master not working on solaris)
+    public get_termios(): ICTermios {
+        this._is_usable();
         if (this._nativePty.slave !== -1)
             return new Termios(this._nativePty.slave);
         if (process.platform === 'sunos') {
@@ -191,7 +236,8 @@ export class RawPty {
         }
         return new Termios(this._nativePty.master);
     }
-    set_termios(termios: ICTermios, action?: number): void {
+    public set_termios(termios: ICTermios, action?: number): void {
+        this._is_usable();
         if (this._nativePty.slave !== -1) {
             termios.writeTo(this._nativePty.slave, action);
             return;
@@ -205,6 +251,17 @@ export class RawPty {
             termios.writeTo(this._nativePty.master, action);
     }
 }
+
+
+
+
+
+
+
+
+
+
+
 
 
 class UnixTerminal extends EventEmitter implements I.ITerminal {
