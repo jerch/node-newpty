@@ -142,12 +142,15 @@ export function spawn(
  */
 export class RawPty {
     private _nativePty: I.NativePty;
+    private _shadowSlave: number;
     private _is_usable(): void {
         if (this._nativePty.master === -1)
             throw new Error('pty is destroyed');
     }
     constructor(options?: I.RawPtyOptions) {
         this._nativePty = openpty(options);
+        if (process.platform === 'sunos')
+            this._shadowSlave = this._nativePty.slave;
     }
     public get master_fd(): number {
         this._is_usable();
@@ -166,22 +169,28 @@ export class RawPty {
         if (this._nativePty.master !== -1)
             fs.closeSync(this._nativePty.master);
         if (this._nativePty.slave !== -1)
-            fs.closeSync(this._nativePty.slave);
+            try { fs.closeSync(this._nativePty.slave); } catch (e) {}
         this._nativePty.master = -1;
         this._nativePty.slave = -1;
         this._nativePty.slavepath = '';
     }
     public open_slave(): number {
         this._is_usable();
-        if (this._nativePty.slave === -1)
-            this._nativePty.slave = fs.openSync(this._nativePty.slavepath,
-                native.FD_FLAGS.O_RDWR | native.FD_FLAGS.O_NOCTTY);
+        if (this._nativePty.slave === -1) {
+            if (process.platform !== 'sunos')
+                this._nativePty.slave = fs.openSync(this._nativePty.slavepath,
+                    native.FD_FLAGS.O_RDWR | native.FD_FLAGS.O_NOCTTY);
+            else
+                this._nativePty.slave = this._shadowSlave;
+        }
         return this._nativePty.slave;
     }
     public close_slave(): void {
         this._is_usable();
-        if (this._nativePty.slave !== -1)
-            fs.closeSync(this._nativePty.slave);
+        if (this._nativePty.slave !== -1) {
+            if (process.platform !== 'sunos')
+                fs.closeSync(this._nativePty.slave);
+        }
         this._nativePty.slave = -1;
     }
     // NOTE: size should be applied to master only
