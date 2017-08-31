@@ -102,59 +102,6 @@ describe('native functions', () => {
         fs.closeSync(slave);
     });
 });
-describe('spawn', () => {
-    it('stderr redirection of child', (done) => {
-        let child: Interfaces.ChildProcess = pty.spawn(pty.STDERR_TESTER, [],
-            {env: process.env, termios: new Termios(0), stderr: true});
-        let stdout_buf: string = '';
-        let stderr_buf: string = '';
-        child.stdout.on('data', (data) => {
-            stdout_buf += data.toString();
-        });
-        child.stderr.on('data', (data) => {
-            stderr_buf += data.toString();
-        });
-        child.stdout.on('close', () => {
-            assert.equal(stdout_buf, 'Hello stdout.');
-            assert.equal(stderr_buf, 'Hello stderr.');
-            done();
-        });
-    });
-    it('stderr redirection of grandchild', (done) => {
-        let child: Interfaces.ChildProcess = pty.spawn('bash', ['-l'],
-            {env: process.env, termios: new Termios(0), stderr: true});
-        let stderr_buf: string = '';
-        child.stdout.on('data', (data) => {
-            // we must consume stdout data to avoid blocking...
-        });
-        child.stderr.on('data', (data) => {
-            stderr_buf += data.toString();
-        });
-        child.stdout.on('close', () => {
-            assert.equal(stderr_buf, 'Hello stderr.');
-            done();
-        });
-        setTimeout(() => { child.stdin.write(pty.STDERR_TESTER + '\r'); }, 200);
-        setTimeout(() => { child.stdin.write('exit\r'); }, 500);
-    });
-    it('stderr redirection of great-grandchild', (done) => {
-        let child: Interfaces.ChildProcess = pty.spawn('bash', ['-l'],
-            {env: process.env, termios: new Termios(0), stderr: true});
-        let stderr_buf: string = '';
-        child.stdout.on('data', (data) => {
-            // we must consume stdout data to avoid blocking...
-        });
-        child.stderr.on('data', (data) => {
-            stderr_buf += data.toString();
-        });
-        child.stdout.on('close', () => {
-            assert.equal(stderr_buf, 'Hello stderr.');
-            done();
-        });
-        setTimeout(() => { child.stdin.write('bash -c ' + pty.STDERR_TESTER + '\r'); }, 200);
-        setTimeout(() => { child.stdin.write('exit\r'); }, 500);
-    });
-});
 describe('class RawPty', () => {
     it('primitive getter', () => {
         let rawPty: pty.RawPty = new pty.RawPty();
@@ -340,11 +287,12 @@ describe('class Pty', () => {
             ended();
         });
         jsPty.stdout.on('readable', () => {
-            // NOTE: stdout should see both inputs due to ECHO set in Termios
+            // NOTE: stdout should see both inputs due to ECHO set in Termios FIXME: not working on OpenBSD
             assert.equal(jsPty.stdout.read().toString(), 'slave --> stdout\r\nstdin --> slave\r\n');
             ended();
         });
     });
+    // FIXME: not working on solaris
     it('autoclose pty', (done) => {
         let jsPty: pty.Pty = new pty.Pty({termios: new Termios(0), auto_close: true});
         jsPty.stdout.on('close', () => {
@@ -354,6 +302,17 @@ describe('class Pty', () => {
         // closing slave should end the streams, any access to RawPty should fail
         jsPty.close_slave();
     });
+    it('no autoclose pty', (done) => {
+        let jsPty: pty.Pty = new pty.Pty({termios: new Termios(0), auto_close: false});
+        jsPty.stdout.on('close', () => {
+            assert.doesNotThrow(() => { let a: number = jsPty.master_fd; });
+            jsPty.close();
+            done();
+        });
+        // closing slave should end the streams, any access to RawPty should fail
+        jsPty.close_slave();
+    });
+    // FIXME: not working on solaris
     it('autoclose pty with slave stream open', (done) => {
         let jsPty: pty.Pty = new pty.Pty({termios: new Termios(0), init_slave: true, auto_close: true});
         jsPty.stdout.on('close', () => {
@@ -364,5 +323,56 @@ describe('class Pty', () => {
         jsPty.close_slave();
         // we must also close the slave stream (node dupes the file descriptor)
         jsPty.close_slave_stream();
+    });
+});
+describe('spawn', () => {
+    it('stderr redirection of child', (done) => {
+        let child: Interfaces.IPtyProcess = pty.spawn(pty.STDERR_TESTER, [],
+            {env: process.env, termios: new Termios(0), stderr: true});
+        let stdout_buf: string = '';
+        let stderr_buf: string = '';
+        child.stdout.on('data', (data) => {
+            stdout_buf += data.toString();
+        });
+        child.stderr.on('data', (data) => {
+            stderr_buf += data.toString();
+        });
+        child.stdout.on('close', () => {
+            assert.equal(stdout_buf, 'Hello stdout.');
+            assert.equal(stderr_buf, 'Hello stderr.');
+            done();
+        });
+    });
+    it('stderr redirection of grandchild', (done) => {
+        let child: Interfaces.IPtyProcess = pty.spawn('bash', ['-l'],
+            {env: process.env, termios: new Termios(0), stderr: true});
+        let stderr_buf: string = '';
+        // we must consume stdout data to avoid blocking...
+        child.stdout.on('data', (data) => {});
+        child.stderr.on('data', (data) => {
+            stderr_buf += data.toString();
+        });
+        child.stdout.on('close', () => {
+            assert.equal(stderr_buf, 'Hello stderr.');
+            done();
+        });
+        setTimeout(() => { child.stdin.write(pty.STDERR_TESTER + '\r'); }, 200);
+        setTimeout(() => { child.stdin.write('exit\r'); }, 500);
+    });
+    it('stderr redirection of great-grandchild', (done) => {
+        let child: Interfaces.IPtyProcess = pty.spawn('bash', ['-l'],
+            {env: process.env, termios: new Termios(0), stderr: true});
+        let stderr_buf: string = '';
+        // we must consume stdout data to avoid blocking...
+        child.stdout.on('data', (data) => {});
+        child.stderr.on('data', (data) => {
+            stderr_buf += data.toString();
+        });
+        child.stdout.on('close', () => {
+            assert.equal(stderr_buf, 'Hello stderr.');
+            done();
+        });
+        setTimeout(() => { child.stdin.write('bash -c ' + pty.STDERR_TESTER + '\r'); }, 200);
+        setTimeout(() => { child.stdin.write('exit\r'); }, 500);
     });
 });

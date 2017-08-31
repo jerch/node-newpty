@@ -1,65 +1,12 @@
 import {Socket} from 'net';
-import * as childprocess from 'child_process';
+import * as cp from 'child_process';
 import {ICTermios} from 'node-termios';
+import {ReadStream} from 'tty';
 
-export interface Size {
-    cols?: number;
-    rows?: number;
-}
 
-export interface OpenPtyOptions {
-    termios?: ICTermios;
-    size?: Size;
-}
-
-export type RawPtyOptions = OpenPtyOptions;
-
-export interface PtyOptions extends RawPtyOptions {
-    /**
-     * auto_close raw pty - defaults to false
-     * destroys the pty once the slave side hang up
-     */
-    auto_close?: boolean;
-
-    /**
-     * init a slave socket - defaults to false
-     * only reasonable for slave processing within this process
-     * (dont use with a child process)
-     */
-    init_slave?: boolean;
-}
-
-export interface NativePty {
-    master: number;
-    slave: number;
-    slavepath: string;
-}
-
-export interface PtyFileDescriptors {
-    read: number;
-    write: number;
-}
-
-export interface  PtyChannels {
-    stdin: Socket;
-    stdout: Socket;
-}
-
-export interface SpawnOptions extends childprocess.SpawnOptions {
-    // termios settings applied to the new pty device
-    termios?: ICTermios;
-    // size settings applied to the new pty device
-    size?: Size;
-    // additional stderr pipe (CAVE: might not work correctly with every child process)
-    stderr?: boolean;
-}
-
-export interface ChildProcess extends childprocess.ChildProcess {
-    // TODO: add pty semantics to return value
-    master?: number;
-    slavepath?: string;
-}
-
+/**
+ * File flags exported by the native module.
+ */
 export interface FdFlags {
     O_RDONLY: number;
     O_WRONLY: number;
@@ -68,6 +15,28 @@ export interface FdFlags {
     O_NONBLOCK: number;
 }
 
+
+/**
+ * terminal size
+ */
+export interface Size {
+    cols?: number;
+    rows?: number;
+}
+
+
+/**
+ * file descriptor pair for read/write to pty master
+ */
+export interface PtyFileDescriptors {
+    read: number;
+    write: number;
+}
+
+
+/**
+ * native exports
+ */
 export interface Native {
     openpt(options: number): number;
     grantpt(fd: number): void;
@@ -79,6 +48,211 @@ export interface Native {
     load_driver(fd: number): void;
     FD_FLAGS: FdFlags;
 }
+
+
+/**
+ * low level pty data as returned by openpty
+ */
+export interface NativePty {
+    master: number;
+    slave: number;
+    slavepath: string;
+}
+
+
+/**
+ * master IO streams FIXME: to beremoved
+ */
+export interface  PtyChannels {
+    stdin: Socket;
+    stdout: Socket;
+}
+
+
+/**
+ * options for openpty and RawPty()
+ */
+export interface OpenPtyOptions {
+    termios?: ICTermios;
+    size?: Size;
+}
+export type RawPtyOptions = OpenPtyOptions;
+
+
+/**
+ * options for Pty()
+ */
+export interface PtyOptions extends RawPtyOptions {
+    /**
+     * auto_close raw pty - defaults to false
+     * destroys the pty once the slave side hangs up
+     */
+    auto_close?: boolean;
+
+    /**
+     * init a slave socket - defaults to false
+     * only reasonable for slave processing within this process
+     * (dont use with a child process)
+     */
+    init_slave?: boolean;
+}
+
+
+/**
+ * RawPty interface
+ */
+export interface IRawPty {
+    /**
+     * getter of the master file descriptor
+     */
+    master_fd: number;
+
+    /**
+     * getter of the slave file descriptor. -1 if not opened
+     */
+    slave_fd: number;
+
+    /**
+     * getter of the slave pathname
+     */
+    slavepath: string;
+
+    /**
+     * close pty, any further usage will fail
+     */
+    close(): void;
+
+    /**
+     * open the slave side of the pty if not opened
+     */
+    open_slave(): number;
+
+    /**
+     * close slave side of the pty FIXME: Does not close on Solaris atm.
+     */
+    close_slave(): void;
+
+    /**
+     * get the size settings of the pty
+     */
+    get_size(): Size;
+
+    /**
+     * set the of the pty and return new size settings
+     */
+    set_size(cols: number, rows: number): Size;
+
+    /**
+     * set the of the pty
+     */
+    resize(cols: number, rows: number): void;
+
+    /**
+     * get and set the columns of the pty
+     */
+    columns: number;
+
+    /**
+     * get and set the rows of the pty
+     */
+    rows: number;
+
+    /**
+     * get the termios settings of the pty
+     */
+    get_termios(): ICTermios;
+
+    /**
+     * set the termios settings of the pty
+     * @param termios
+     * @param action
+     */
+    set_termios(termios: ICTermios, action?: number): void;
+}
+
+
+/**
+ * Pty interface
+ */
+export interface IPty extends IRawPty {
+    /**
+     * write socket of the pty master
+     */
+    stdin: null | Socket;
+
+    /**
+     * read socket of the pty master
+     */
+    stdout: null | Socket;
+
+    /**
+     * read/write socket of the pty slave
+     */
+    slave: null | ReadStream;
+
+    /**
+     * initialize master streams (stdin, stdout), closes previous streams
+     * @param auto_close
+     */
+    init_master_streams(auto_close: boolean): void;
+
+    /**
+     * close master streams (stdin, stdout)
+     */
+    close_master_streams(): void;
+
+    /**
+     * initialize slave stream
+     */
+    init_slave_stream(): void;
+
+    /**
+     * close slave stream
+     */
+    close_slave_stream(): void;
+}
+
+
+/**
+ * modified ChildProcess interface to hold a reference to Pty
+ */
+export interface IPtyProcess extends cp.ChildProcess {
+    pty: IPty;
+}
+
+/**
+ * modified SpawnOptions
+ */
+export interface PtySpawnOptions extends cp.SpawnOptions {
+    /**
+     * termios settings applied to the pty device
+     */
+    termios?: ICTermios;
+
+    /**
+     * size settings applied to the new pty device
+     */
+    size?: Size;
+
+    /**
+     * additional stderr pipe
+     * CAVE: might not work correctly with every child process
+     */
+    stderr?: boolean;
+
+    /**
+     * auto_close pty on exit
+     */
+    auto_close?: boolean;
+}
+
+
+
+
+
+
+
+
 
 // old node-pty interface
 export interface ITerminal {

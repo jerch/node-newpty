@@ -4,16 +4,23 @@ import * as path from 'path';
 import {Socket} from 'net';
 import {Termios, ICTermios} from 'node-termios';
 import {EventEmitter} from 'events';
-import * as childprocess from 'child_process';
+import * as cp from 'child_process';
 import * as tty from 'tty';
 
 // cant import ReadStream?
 const ReadStream = require('tty').ReadStream;
 
+// native module
 export const native: I.Native = require(path.join('..', 'build', 'Release', 'pty.node'));
 
+// default terminal size
 export const DEFAULT_COLS: number = 80;
 export const DEFAULT_ROWS: number = 24;
+
+// helper applications
+export const HELPER: string = path.join(__dirname, '..', 'build', 'Release', 'helper');
+export const STDERR_TESTER: string = path.join(__dirname, '..', 'build', 'Release', 'stderr_tester');
+
 
 
 /**
@@ -48,86 +55,6 @@ export function openpty(opts?: I.OpenPtyOptions): I.NativePty {
 
 
 /**
- * get_io_channels - get stdin/stdout sockets for the pty master fd.
- *
- * This functions spawns additional OS pipes and forwards data
- * from and to the pty master fd. This is needed to circumvent data loss
- * at the end of the last slave process.
- * The pipes get closed automatically by the underlying poll implementation
- * once `EOF` is reached:
- *      - last open pty slave was closed
- *      - pty master was closed
- *
- * @param fd
- * @param close_master
- * @return {{stdout: Socket, stdin: Socket}}
- */
-export function get_io_channels(fd: number, close_master: boolean = true): I.PtyChannels {
-    let channels: I.PtyFileDescriptors = native.get_io_channels(fd);
-
-    let stdin: Socket = new Socket({fd: channels.write, readable: false, writable: true});
-    stdin.on('end', function (): void {
-        try {
-            fs.closeSync(channels.write);
-        } catch (e) {}
-    });
-
-    let stdout: Socket = new Socket({fd: channels.read, readable: true, writable: false});
-    stdout.on('end', function (): void {
-        try {
-            if (close_master)
-                fs.closeSync(fd);
-            fs.closeSync(channels.read);
-        } catch (e) {}
-    });
-
-    return {stdin: stdin, stdout: stdout};
-}
-
-
-export const HELPER: string = path.join(__dirname, '..', 'build', 'Release', 'helper');
-export const STDERR_TESTER: string = path.join(__dirname, '..', 'build', 'Release', 'stderr_tester');
-
-/**
- * spawn2 - child_process based version.
- * @param command
- * @param args
- * @param options
- * @return {ChildProcess}
- */
-export function spawn(
-    command: string,
-    args?: string[],
-    options?: I.SpawnOptions): I.ChildProcess
-{
-    options = options || {};
-
-    // open a new pty
-    let n_pty: I.NativePty = openpty({termios: options.termios, size: options.size});
-
-    // prepare child_process:
-    // - set IO channels to the slave end
-    // - set child as detached to get `setsid`
-    // - insert HELPER as command to get slave as controlling terminal
-    options.stdio = [n_pty.slave, n_pty.slave, (options.stderr) ? 'pipe' : n_pty.slave];
-    options.detached = true;
-    let child: I.ChildProcess = childprocess.spawn(HELPER, [command].concat(args || []), options);
-
-    // get IO channels and attach them to the ChildProcess
-    let channels: I.PtyChannels = get_io_channels(n_pty.master);
-    child.stdin = channels.stdin;
-    child.stdout = channels.stdout;
-
-    // append important pty symbols to the ChildProcess - TODO: add termios and size getters/setters
-    child.master = n_pty.master;
-    child.slavepath = n_pty.slavepath;
-
-    // finally close slave fd
-    fs.closeSync(n_pty.slave);
-    return child;
-}
-
-/**
  * RawPty - class to hold a pty device.
  *
  * Main purpose of this class is to encapsulate termios settings,
@@ -152,7 +79,7 @@ export function spawn(
  * TODO: needs explanation
  */
 // FIXME: solaris maintains a slave fd all the time, needs fix in poller!!!!!
-export class RawPty {
+export class RawPty implements I.IRawPty {
     private _nativePty: I.NativePty;
     private _solarisShadowSlave: number;
     private _is_usable(): void {
@@ -267,12 +194,13 @@ export class RawPty {
     }
 }
 
+
 /**
- * Pty - class with IO streams over a pty.
+ * Pty - class with pty IO streams.
  *
  * The class extends `RawPty` with IO stream objects
  * to be used in a JS typical fashion.
- * The master end of the pty is splitted into separate
+ * The master end of the pty is split into separate
  * read and write streams:
  *  - `stdin`   write stream of master (stdin for slave)
  *  - `stdout`  read stream of master (stdout for slave)
@@ -280,9 +208,9 @@ export class RawPty {
  * Upon instantiation only the master streams are created by default.
  * If you need a slave stream set `init_slave` to true or call `init_slave_stream()`.
  * With `auto_close` the master streams and the pty will close automatically
- * once all slave consumers hang up, without the pty can be reused.
+ * once all slave consumers hang up, without the underlying pty can be reused.
  */
-export class Pty extends RawPty {
+export class Pty extends RawPty implements I.IPty {
     private _fds: I.PtyFileDescriptors;
     public stdin: null | Socket;
     public stdout: null | Socket;
@@ -340,8 +268,26 @@ export class Pty extends RawPty {
 }
 
 
-
-
+/**
+ * spawn - spawn a process behind it's own pty.
+ */
+export function spawn(
+    command: string,
+    args?: string[],
+    options?: I.PtySpawnOptions): I.IPtyProcess
+{
+    options = options || {};
+    options.auto_close = true;
+    let jsPty = new Pty(options);
+    options.stdio = [jsPty.slave_fd, jsPty.slave_fd, (options.stderr) ? 'pipe' : jsPty.slave_fd];
+    options.detached = true;
+    let child: I.IPtyProcess = cp.spawn(HELPER, [command].concat(args || []), options) as I.IPtyProcess;
+    child.stdin = jsPty.stdin;
+    child.stdout = jsPty.stdout;
+    child.pty = jsPty;
+    jsPty.close_slave();
+    return child;
+}
 
 
 
