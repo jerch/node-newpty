@@ -286,11 +286,14 @@ describe('class Pty', () => {
             assert.equal(jsPty.slave.read().toString(), 'stdin --> slave\n');
             ended();
         });
+        let buffer: string = '';
         jsPty.stdout.on('readable', () => {
-            // NOTE: stdout should see both inputs due to ECHO set in Termios FIXME: not working on OpenBSD
-            assert.equal(jsPty.stdout.read().toString(), 'slave --> stdout\r\nstdin --> slave\r\n');
-            ended();
+            buffer += jsPty.stdout.read().toString();
         });
+        setTimeout(() => {
+            assert.equal(buffer, 'slave --> stdout\r\nstdin --> slave\r\n');
+            ended();
+        }, 200);
     });
     // FIXME: not working on solaris
     it('autoclose pty', (done) => {
