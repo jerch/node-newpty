@@ -14,6 +14,21 @@ export interface OpenPtyOptions {
 
 export type RawPtyOptions = OpenPtyOptions;
 
+export interface PtyOptions extends RawPtyOptions {
+    /**
+     * auto_close raw pty - defaults to false
+     * destroys the pty once the slave side hang up
+     */
+    auto_close?: boolean;
+
+    /**
+     * init a slave socket - defaults to false
+     * only reasonable for slave processing within this process
+     * (dont use with a child process)
+     */
+    init_slave?: boolean;
+}
+
 export interface NativePty {
     master: number;
     slave: number;

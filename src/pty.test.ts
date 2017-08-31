@@ -155,7 +155,7 @@ describe('spawn', () => {
         setTimeout(() => { child.stdin.write('exit\r'); }, 500);
     });
 });
-describe('RawPty', () => {
+describe('class RawPty', () => {
     it('primitive getter', () => {
         let rawPty: pty.RawPty = new pty.RawPty();
         assert.notEqual(rawPty.master_fd, -1);
@@ -256,5 +256,113 @@ describe('RawPty', () => {
         assert.deepEqual(termios, rawPty.get_termios());
         assert.notDeepEqual(termios, new Termios(0));
         rawPty.close();
+    });
+});
+describe('class Pty', () => {
+    it('slave_fd --> stdout', (done) => {
+        let jsPty: pty.Pty = new pty.Pty({termios: new Termios(0)});
+        fs.writeSync(jsPty.slave_fd, 'Hello world!\n');
+        jsPty.stdout.on('readable', () => {
+            assert.equal(jsPty.stdout.read().toString(), 'Hello world!\r\n');
+            jsPty.close();
+            done();
+        });
+    });
+    it('stdin --> slave_fd', () => {
+        let jsPty: pty.Pty = new pty.Pty({termios: new Termios(0)});
+        jsPty.stdin.write('Hello world!\n');
+        let buffer: Buffer = new Buffer(100);
+        let size: number = fs.readSync(jsPty.slave_fd, buffer, 0, 100, -1);
+        assert.deepEqual(buffer.slice(0, size).toString(), 'Hello world!\n');
+        jsPty.close();
+    });
+    it('slave --> stdout', (done) => {
+        let jsPty: pty.Pty = new pty.Pty({termios: new Termios(0), init_slave: true});
+        jsPty.slave.write('Hello world!\n');
+        jsPty.stdout.on('readable', () => {
+            assert.equal(jsPty.stdout.read().toString(), 'Hello world!\r\n');
+            jsPty.close();
+            done();
+        });
+    });
+    it('stdin --> slave', (done) => {
+        let jsPty: pty.Pty = new pty.Pty({termios: new Termios(0), init_slave: true});
+        jsPty.stdin.write('Hello world!\n');
+        jsPty.slave.on('readable', () => {
+            assert.equal(jsPty.slave.read().toString(), 'Hello world!\n');
+            jsPty.close();
+            done();
+        });
+    });
+    it('close_stream should emit "close" and invalidate streams', (done) => {
+        let jsPty: pty.Pty = new pty.Pty({termios: new Termios(0), init_slave: true});
+        let wait_end: number = 3;
+        let ended = (): void => {
+            wait_end--;
+            if (!wait_end) {
+                assert.equal(jsPty.stdin, null);
+                assert.equal(jsPty.stdout, null);
+                assert.equal(jsPty.slave, null);
+                jsPty.close();
+                done();
+            }
+        };
+        jsPty.stdin.on('close', () => {
+            ended();
+        });
+        jsPty.stdout.on('close', () => {
+            ended();
+        });
+        jsPty.slave.on('close', () => {
+            ended();
+        });
+        jsPty.close_slave_stream();
+        jsPty.close_master_streams();
+    });
+    it('recreate streams', (done) => {
+        let jsPty: pty.Pty = new pty.Pty({termios: new Termios(0), init_slave: true});
+        jsPty.close_slave_stream();
+        jsPty.close_master_streams();
+        jsPty.init_master_streams();
+        jsPty.init_slave_stream();
+        let wait_end: number = 2;
+        let ended = (): void => {
+            wait_end--;
+            if (!wait_end) {
+                jsPty.close();
+                done();
+            }
+        };
+        jsPty.slave.write('slave --> stdout\n');
+        jsPty.stdin.write('stdin --> slave\n');
+        jsPty.slave.on('readable', () => {
+            assert.equal(jsPty.slave.read().toString(), 'stdin --> slave\n');
+            ended();
+        });
+        jsPty.stdout.on('readable', () => {
+            // NOTE: stdout should see both inputs due to ECHO set in Termios
+            assert.equal(jsPty.stdout.read().toString(), 'slave --> stdout\r\nstdin --> slave\r\n');
+            ended();
+        });
+    });
+    it('autoclose pty', (done) => {
+        let jsPty: pty.Pty = new pty.Pty({termios: new Termios(0), auto_close: true});
+        jsPty.stdout.on('close', () => {
+            assert.throws(() => { let a: number = jsPty.master_fd; });
+            done();
+        });
+        // closing slave should end the streams, any access to RawPty should fail
+        jsPty.close_slave();
+    });
+    it('autoclose pty with slave stream open', (done) => {
+        let jsPty: pty.Pty = new pty.Pty({termios: new Termios(0), init_slave: true, auto_close: true});
+        jsPty.stdout.on('close', () => {
+            assert.throws(() => { let a: number = jsPty.master_fd; });
+            done();
+        });
+        // closing slave should end the streams, any access to RawPty should fail
+        jsPty.close_slave();
+        // we must also close the slave stream (node dupes the file descriptor)
+        jsPty.close_slave_stream();
     });
 });

@@ -5,7 +5,10 @@ import {Socket} from 'net';
 import {Termios, ICTermios} from 'node-termios';
 import {EventEmitter} from 'events';
 import * as childprocess from 'child_process';
-import {platform} from "os";
+import * as tty from 'tty';
+
+// cant import ReadStream?
+const ReadStream = require('tty').ReadStream;
 
 export const native: I.Native = require(path.join('..', 'build', 'Release', 'pty.node'));
 
@@ -264,8 +267,77 @@ export class RawPty {
     }
 }
 
-
-
+/**
+ * Pty - class with IO streams over a pty.
+ *
+ * The class extends `RawPty` with IO stream objects
+ * to be used in a JS typical fashion.
+ * The master end of the pty is splitted into separate
+ * read and write streams:
+ *  - `stdin`   write stream of master (stdin for slave)
+ *  - `stdout`  read stream of master (stdout for slave)
+ *
+ * Upon instantiation only the master streams are created by default.
+ * If you need a slave stream set `init_slave` to true or call `init_slave_stream()`.
+ * With `auto_close` the master streams and the pty will close automatically
+ * once all slave consumers hang up, without the pty can be reused.
+ */
+export class Pty extends RawPty {
+    private _fds: I.PtyFileDescriptors;
+    public stdin: null | Socket;
+    public stdout: null | Socket;
+    public slave: null | tty.ReadStream;
+    constructor(options?: I.PtyOptions) {
+        super(options);
+        this._fds = {read: -1, write: -1};
+        this.init_master_streams((options) ? options.auto_close : false);
+        if (options && options.init_slave)
+            this.init_slave_stream();
+    }
+    public init_master_streams(auto_close: boolean = false): void {
+        this.close_master_streams();
+        this._fds = native.get_io_channels(this.master_fd);
+        this.stdin = new Socket({fd: this._fds.write, readable: false, writable: true});
+        this.stdin.on('end', (): void => {
+            try { fs.closeSync(this._fds.write); } catch (e) {}
+        });
+        this.stdout = new Socket({fd: this._fds.read, readable: true, writable: false});
+        this.stdout.on('end', (): void => {
+            if (auto_close)
+                this.close();
+            try { fs.closeSync(this._fds.read); } catch (e) {}
+        });
+    }
+    public close_master_streams(): void {
+        if (this.stdin)
+            this.stdin.destroy();
+        if (this.stdout)
+            this.stdout.destroy();
+        this.stdin = null;
+        this.stdout = null;
+        try { fs.closeSync(this._fds.read); } catch (e) {}
+        try { fs.closeSync(this._fds.write); } catch (e) {}
+        this._fds.read = -1;
+        this._fds.write = -1;
+    }
+    public init_slave_stream(): void {
+        this.close_slave_stream();
+        if (this.slave_fd === -1)
+            this.open_slave();
+        this.slave = new ReadStream(this.slave_fd);
+        this.slave.writable = true;
+    }
+    public close_slave_stream(): void {
+        if (this.slave)
+            this.slave.destroy();
+        this.slave = null;
+    }
+    public close(): void {
+        this.close_slave_stream();
+        this.close_master_streams();
+        super.close();
+    }
+}
 
 
 
