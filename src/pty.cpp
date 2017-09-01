@@ -141,7 +141,7 @@ NAN_METHOD(js_pty_set_size) {
     int res = ioctl(info[0]->IntegerValue(), TIOCSWINSZ, &winp);
     if (res == -1) {
         std::string error(strerror(errno));
-        return Nan::ThrowError((std::string("get_size failed - ") + error).c_str());
+        return Nan::ThrowError((std::string("set_size failed - ") + error).c_str());
     }
     Local<Object> obj = Nan::New<Object>();
     SET(obj, "cols", Nan::New<Number>(winp.ws_col));

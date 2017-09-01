@@ -20,8 +20,6 @@ export const DEFAULT_ROWS: number = 24;
 // helper applications
 export const HELPER: string = path.join(__dirname, '..', 'build', 'Release', 'helper');
 export const STDERR_TESTER: string = path.join(__dirname, '..', 'build', 'Release', 'stderr_tester');
-export const SOLARIS_HELPER: string = path.join(__dirname, '..', 'build', 'Release', 'solaris_helper');
-
 
 
 /**
@@ -55,6 +53,7 @@ export function openpty(opts?: I.OpenPtyOptions): I.NativePty {
 }
 
 
+
 /**
  * RawPty - class to hold a pty device.
  *
@@ -74,26 +73,33 @@ export function openpty(opts?: I.OpenPtyOptions): I.NativePty {
  *
  * NOTE: Solaris behaves very different regarding pty semantics.
  * On Solaris a pty is a STREAMS clone where tty semantics get loaded onto the slave end.
- * Other than on BSDs or Linux systems that slave end must stay open to get
- * the right values for size and termios.
- * Therefore the class always holds a slave file descriptor on Solaris.
- * TODO: needs explanation
+ * Other than on BSDs or Linux systems the size and termios settings are lost
+ * once the last slave was closed. Therefore those settings are stored
+ * explicitly on Solaris and will be applied automatically to a new slave.
+ * Since a slave program can alter these settings it is not safe to rely
+ * on the values without an open slave.
  */
-// FIXME: solaris maintains a slave fd all the time, needs fix in poller!!!!!
 export class RawPty implements I.IRawPty {
     private _nativePty: I.NativePty;
-    private _solarisShadowSlave: number;
+    private _slave_holder: cp.ChildProcess;
+    private _size: I.Size;
+    private _termios: ICTermios;
     private _is_usable(): void {
         if (this._nativePty.master === -1)
             throw new Error('pty is destroyed');
     }
     constructor(options?: I.RawPtyOptions) {
         this._nativePty = openpty(options);
-        //if (process.platform === 'sunos')
-        //    this._solarisShadowSlave = this._nativePty.slave;
-
         if (process.platform === 'sunos') {
-            let slave_holder: cp.ChildProcess = cp.spawn(SOLARIS_HELPER, [this._nativePty.slavepath]);
+            this._size = native.get_size(this._nativePty.slave);
+            this._termios = new Termios(this._nativePty.slave);
+        }
+    }
+    private _prepare_slave(fd: number): void {
+        if (process.platform === 'sunos') {
+            native.load_driver(this._nativePty.slave);
+            this._termios.writeTo(this._nativePty.slave);
+            native.set_size(this._nativePty.slave, this._size.cols, this._size.rows);
         }
     }
     public get master_fd(): number {
@@ -114,8 +120,6 @@ export class RawPty implements I.IRawPty {
             fs.closeSync(this._nativePty.master);
         if (this._nativePty.slave !== -1)
             try { fs.closeSync(this._nativePty.slave); } catch (e) {}
-        //if (process.platform === 'sunos')
-        //    try { fs.closeSync(this._solarisShadowSlave); } catch (e) {}
         this._nativePty.master = -1;
         this._nativePty.slave = -1;
         this._nativePty.slavepath = '';
@@ -123,32 +127,40 @@ export class RawPty implements I.IRawPty {
     public open_slave(): number {
         this._is_usable();
         if (this._nativePty.slave === -1) {
-            //if (process.platform !== 'sunos')
-                this._nativePty.slave = fs.openSync(this._nativePty.slavepath,
-                    native.FD_FLAGS.O_RDWR | native.FD_FLAGS.O_NOCTTY);
-            //else
-            //    this._nativePty.slave = this._solarisShadowSlave;
+            this._nativePty.slave = fs.openSync(this._nativePty.slavepath,
+                native.FD_FLAGS.O_RDWR | native.FD_FLAGS.O_NOCTTY);
+            this._prepare_slave(this._nativePty.slave);
         }
         return this._nativePty.slave;
     }
     public close_slave(): void {
         this._is_usable();
         if (this._nativePty.slave !== -1) {
-            // slave cannot be closed on solaris
-            //if (process.platform !== 'sunos')
-                fs.closeSync(this._nativePty.slave);
+            fs.closeSync(this._nativePty.slave);
         }
         this._nativePty.slave = -1;
     }
     public get_size(): I.Size {
         this._is_usable();
+        if (process.platform === 'sunos')
+            return this._size;
         return native.get_size(this._nativePty.master);
     }
     public set_size(cols: number, rows: number): I.Size {
         this._is_usable();
-        if (cols > 0 && rows > 0)
-            return native.set_size(this._nativePty.master, cols, rows);
-        throw new Error('cols/rows must be greater 0');
+        if (cols < 1 || rows < 1)
+            throw new Error('cols/rows must be greater 0');
+        if (process.platform === 'sunos') {
+            let to_close: boolean = (this._nativePty.slave === -1);
+            if (to_close)
+                this.open_slave();
+            let size: I.Size = native.set_size(this._nativePty.slave, cols, rows);
+            this._size = {cols: cols, rows: rows};
+            if (to_close)
+                this.close_slave();
+            return size;
+        }
+        return native.set_size(this._nativePty.master, cols, rows);
     }
     public resize(cols: number, rows: number): void {
         this._is_usable();
@@ -175,10 +187,8 @@ export class RawPty implements I.IRawPty {
         // should always work on slave end
         if (this._nativePty.slave !== -1)
             return new Termios(this._nativePty.slave);
-        // special case for solaris
-        //if (process.platform === 'sunos') {
-        //    return new Termios(this._solarisShadowSlave);
-        //}
+        if (process.platform === 'sunos')
+            return new Termios(this._termios);
         // fall through to master end (not working on solaris)
         return new Termios(this._nativePty.master);
     }
@@ -189,11 +199,13 @@ export class RawPty implements I.IRawPty {
             termios.writeTo(this._nativePty.slave, action);
             return;
         }
-        // special case for solaris
-        //if (process.platform === 'sunos') {
-        //    termios.writeTo(this._solarisShadowSlave, action);
-        //    return;
-        //}
+        if (process.platform === 'sunos') {
+            this.open_slave();
+            termios.writeTo(this._nativePty.slave, action);
+            this._termios = termios;
+            this.close_slave();
+            return;
+        }
         // fall through to master end (not working on solaris)
         termios.writeTo(this._nativePty.master, action);
     }

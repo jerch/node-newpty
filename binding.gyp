@@ -16,10 +16,5 @@
             'type': 'executable',
             'sources': ['src/stderr_tester.cpp']
         },
-        {
-            'target_name': 'solaris_helper',
-            'type': 'executable',
-            'sources': ['src/solaris_helper.cpp']
-        },
     ],
 }
