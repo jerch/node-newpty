@@ -6,6 +6,9 @@ import {Termios, ICTermios} from 'node-termios';
 import {EventEmitter} from 'events';
 import * as cp from 'child_process';
 import * as tty from 'tty';
+import {Duplex} from "stream";
+import {Readable} from "stream";
+import {Writable} from "stream";
 
 // cant import ReadStream?
 const ReadStream = require('tty').ReadStream;
@@ -76,7 +79,7 @@ export function openpty(opts?: I.OpenPtyOptions): I.NativePty {
  * once the last slave was closed. Therefore those settings are stored
  * explicitly on Solaris and will be applied automatically to a new slave.
  * Since a slave program can alter these settings it is not safe to rely
- * on the values without an open slave.
+ * on the values without keeping the slave end open on Solaris.
  */
 export class RawPty implements I.IRawPty {
     private _nativePty: I.NativePty;
@@ -86,18 +89,18 @@ export class RawPty implements I.IRawPty {
         if (this._nativePty.master === -1)
             throw new Error('pty is destroyed');
     }
-    constructor(options?: I.RawPtyOptions) {
-        this._nativePty = openpty(options);
-        if (process.platform === 'sunos') {
-            this._size = native.get_size(this._nativePty.slave);
-            this._termios = new Termios(this._nativePty.slave);
-        }
-    }
     private _prepare_slave(fd: number): void {
         if (process.platform === 'sunos') {
             native.load_driver(this._nativePty.slave);
             this._termios.writeTo(this._nativePty.slave);
             native.set_size(this._nativePty.slave, this._size.cols, this._size.rows);
+        }
+    }
+    constructor(options?: I.RawPtyOptions) {
+        this._nativePty = openpty(options);
+        if (process.platform === 'sunos') {
+            this._size = native.get_size(this._nativePty.slave);
+            this._termios = new Termios(this._nativePty.slave);
         }
     }
     public get master_fd(): number {
@@ -284,6 +287,39 @@ export class Pty extends RawPty implements I.IPty {
 
 
 /**
+ * helper class to merge stdin and stdout
+ */
+export class MasterSocket extends Duplex {
+    private _reader: Readable;
+    private _writer: Writable;
+    constructor(reader: Readable, writer: Writable) {
+        let opts: any = {allowHalfOpen: false};
+        super(opts);
+        this._reader = reader;
+        this._writer = writer;
+        this._reader.pause();
+
+        this._reader.on('data', (data) => {
+            if (!this.push(data)) {
+                this._reader.pause();
+                // FIXME do we need to unshift the last data package?
+                //this._reader.unshift(data);
+            }
+        });
+        this._reader.on('close', () => {
+            this.emit('close');
+        });
+    }
+    _read(size: number) {
+        this._reader.resume();
+    }
+    _write(chunk: any, encoding: string, callback: Function) {
+        this._writer.write(chunk, encoding, callback);
+    }
+}
+
+
+/**
  * spawn - spawn a process behind it's own pty.
  */
 export function spawn(
@@ -304,54 +340,154 @@ export function spawn(
     return child;
 }
 
+function assign(target: any, ...sources: any[]): any {
+  sources.forEach(source => Object.keys(source).forEach(key => target[key] = source[key]));
+  return target;
+}
 
 
+const DEFAULT_FILE = 'sh';
+const DEFAULT_NAME = 'xterm';
 
-
-
-class UnixTerminal extends EventEmitter implements I.ITerminal {
-    constructor() {
+export class UnixTerminal extends EventEmitter implements I.ITerminal {
+    private _process: I.IPtyProcess;
+    public master: Duplex;
+    constructor(file?: string, args?: I.ArgvOrCommandLine, opt?: I.IPtyForkOptions) {
         super();
+
+        args = args || [];
+        file = file || DEFAULT_FILE;
+        opt = opt || {};
+        opt.env = opt.env || process.env;
+
+        const cols = opt.cols || DEFAULT_COLS;
+        const rows = opt.rows || DEFAULT_ROWS;
+        const uid = opt.uid || -1;
+        const gid = opt.gid || -1;
+        const env = assign({}, opt.env);
+
+        if (opt.env === process.env) {
+            this._sanitizeEnv(env);
+        }
+
+        const cwd = opt.cwd || process.cwd();
+        const name = opt.name || env.TERM || DEFAULT_NAME;
+        env.TERM = name;
+        //const parsedEnv = this._parseEnv(env);
+
+        const encoding = (opt.encoding === undefined ? 'utf8' : opt.encoding);
+
+        const onexit = (code: any, signal: any) => {
+            this.emit('exit', code, signal);
+        };
+
+        //const term = pty.fork(file, args, parsedEnv, cwd, #cols, rows, uid, gid, (encoding === 'utf8'), onexit);
+        // FIXME: setup termios and apply encoding, uid+gid not working
+        let termios: ICTermios = new Termios(0);
+        this._process = spawn(file, args, {env: env, size: {cols: cols, rows: rows}, termios: termios, cwd: cwd});
+        this._process.on('exit', onexit);
+        this.master = new MasterSocket(this._process.stdout, this._process.stdin);
+
+        if (encoding !== null) {
+            this.master.setEncoding(encoding);
+            this._process.stdout.setEncoding(encoding);
+            //this._process.stdin.setEncoding(encoding);
+        }
+
+        this._process.stdout.on('close', () => { this.emit('close'); });
     }
+    private _sanitizeEnv(env: NodeJS.ProcessEnv): void {
+        // Make sure we didn't start our server from inside tmux.
+        delete env['TMUX'];
+        delete env['TMUX_PANE'];
+
+        // Make sure we didn't start our server from inside screen.
+        // http://web.mit.edu/gnu/doc/html/screen_20.html
+        delete env['STY'];
+        delete env['WINDOW'];
+
+        // Delete some variables that might confuse our terminal.
+        delete env['WINDOWID'];
+        delete env['TERMCAP'];
+        delete env['COLUMNS'];
+        delete env['LINES'];
+    }
+
+    get slave(): tty.ReadStream {
+        return this._process.pty.slave;
+    }
+
     get process(): string {
-        // TODO: to be implemented
-        return '';
+        return (this._process as any).spawnargs.slice(1).join(' ');
     }
     get pid(): number {
-        // TODO: to be implemented
-        return -1;
+        return this._process.pid;
     }
-    get master(): Socket {
-        // TODO: should not be exported directly
-        return new Socket();
+    write(data: string): void {
+        this._process.stdin.write(data);
     }
-    get slave(): Socket {
-        // TODO: should not be open on parent side once a child was launched
-        return new Socket();
+    resize(cols: number, rows: number): void {
+        this._process.pty.resize(cols, rows);
     }
-    write(data: string): void {}
-    resize(cols: number, rows: number): void {}
-    destroy(): void {}
-    kill(signal?: string): void {}
-    setEncoding(encoding: string): void {}
-    resume(): void {}
-    pause(): void {}
+    destroy(): void {
+        this._process.pty.close_master_streams();
+        this._process.pty.close_slave_stream();
+        this._process.pty.close();
+        this._process.kill('SIGHUP');
+    }
+    kill(signal?: string): void {
+        this._process.kill(signal);
+    }
+    setEncoding(encoding: string): void {
+        if ((this._process.stdout as any)._decoder)
+            delete (this._process.stdout as any)._decoder;
+        if ((this._process.stdin as any)._decoder)
+            delete (this._process.stdin as any)._decoder;
+        if (encoding) {
+            this._process.stdout.setEncoding(encoding);
+            //this._process.stdin.setEncoding(encoding);
+        }
+    }
+    resume(): void {
+        this._process.stdout.resume();
+        //this._process.stdin.resume();
+    }
+    pause(): void {
+        this._process.stdout.pause();
+        //this._process.stdin.pause();
+    }
     addListener(eventName: string, listener: (...args: any[]) => any): this {
+        this.on(eventName, listener);
         return this;
     }
+    public emit(eventName: string, ...args: any[]): any {
+        return this.master.emit.apply(this.master, arguments);
+    }
     on(eventName: string, listener: (...args: any[]) => any): this {
+        this.master.on(eventName, listener);
+        //try { this._process.stdout.on(eventName, listener); } catch (e) {}
+        //try { this._process.stdin.on(eventName, listener); } catch (e) {}
         return this;
     }
     listeners(eventName: string): Function[] {
-        return [];
+        return this.master.listeners(eventName);
     }
     removeListener(eventName: string, listener: (...args: any[]) => any): this {
+        this.master.removeListener(eventName, listener);
+        try { this._process.stdout.removeListener(eventName, listener); } catch (e) {}
+        try { this._process.stdin.removeListener(eventName, listener); } catch (e) {}
         return this;
     }
     removeAllListeners(eventName: string): this {
+        this.master.removeAllListeners(eventName);
+        try { this._process.stdout.removeAllListeners(eventName); } catch (e) {}
+        try { this._process.stdin.removeAllListeners(eventName); } catch (e) {}
         return this;
     }
     once(eventName: string, listener: (...args: any[]) => any): this {
+        this.master.once(eventName, listener);
+        try { this._process.stdout.once(eventName, listener); } catch (e) {}
+        try { this._process.stdin.once(eventName, listener); } catch (e) {}
         return this;
     }
 }

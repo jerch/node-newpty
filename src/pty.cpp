@@ -25,7 +25,7 @@
 obj->Set(Nan::New<String>(name).ToLocalChecked(), symbol)
 
 #define POLL_BUFSIZE 16384  // poll thread buffer size
-#define POLL_TIMEOUT 10     // poll timeout in msec
+#define POLL_TIMEOUT 100    // poll timeout in msec
 
 #ifndef TEMP_FAILURE_RETRY
 #define TEMP_FAILURE_RETRY(exp)            \

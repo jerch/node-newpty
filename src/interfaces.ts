@@ -2,6 +2,7 @@ import {Socket} from 'net';
 import * as cp from 'child_process';
 import {ICTermios} from 'node-termios';
 import {ReadStream} from 'tty';
+import {Duplex} from "stream";
 
 
 /**
@@ -247,12 +248,22 @@ export interface PtySpawnOptions extends cp.SpawnOptions {
 }
 
 
+/**
+ * Old node-pty interfaces.
+ * Implemented for backwards compatibility.
+ */
+export type ArgvOrCommandLine = string[];
 
-
-
-
-
-
+export interface IPtyForkOptions {
+  name?: string;
+  cols?: number;
+  rows?: number;
+  cwd?: string;
+  env?: NodeJS.ProcessEnv;
+  uid?: number;
+  gid?: number;
+  encoding?: string;
+}
 
 // old node-pty interface
 export interface ITerminal {
@@ -270,7 +281,7 @@ export interface ITerminal {
      * The socket for the master file descriptor. This is not supported on
      * Windows.
      */
-    master: Socket;
+    master: Duplex;
 
     /**
      * The socket for the slave file descriptor. This is not supported on Windows.
