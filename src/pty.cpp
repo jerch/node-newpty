@@ -39,6 +39,12 @@ obj->Set(Nan::New<String>(name).ToLocalChecked(), symbol)
 #endif
 
 
+#ifndef posix_openpt
+int posix_openpt(int flags) {
+    return open("/dev/ptmx", flags);
+}
+#endif
+
 using namespace node;
 using namespace v8;
 
@@ -65,12 +71,12 @@ NAN_METHOD(js_posix_openpt) {
     if (info.Length() != 1 || !(info[0]->IsNumber()))
         return Nan::ThrowError("usage: posix_openpt(flags)");
     int fd = posix_openpt(info[0]->IntegerValue());
-    cloexec(fd);
-    nonblock(fd);
     if (fd < 0) {
         std::string error(strerror(errno));
         return Nan::ThrowError((std::string("posix_openpt failed - ") + error).c_str());
     }
+    cloexec(fd);
+    nonblock(fd);
     info.GetReturnValue().Set(Nan::New<Number>(fd));
 }
 
@@ -349,9 +355,26 @@ NAN_METHOD(load_driver) {
     if (info.Length() != 1 || !info[0]->IsNumber())
         return Nan::ThrowError("usage: pty.load_driver(fd)");
     int slave = info[0]->IntegerValue();
-    ioctl(slave, I_PUSH, "ptem");
-    ioctl(slave, I_PUSH, "ldterm");
-    ioctl(slave, I_PUSH, "ttcompat");  // TODO: do we need BSD compat mode?
+    int setup;
+    // check first if modules were autoloaded
+    if ((setup = ioctl(slave, I_FIND, "ldterm")) < 0) {
+        std::string error(strerror(errno));
+        return Nan::ThrowError((std::string("load_driver failed - ") + error).c_str());
+    }
+    if (!setup) {
+        if (ioctl(slave, I_PUSH, "ptem") < 0) {
+            std::string error(strerror(errno));
+            return Nan::ThrowError((std::string("load_driver ptem failed - ") + error).c_str());
+        }
+        if (ioctl(slave, I_PUSH, "ldterm") < 0) {
+            std::string error(strerror(errno));
+            return Nan::ThrowError((std::string("load_driver ldterm failed - ") + error).c_str());
+        }
+        if (ioctl(slave, I_PUSH, "ttcompat") < 0) {
+            std::string error(strerror(errno));
+            return Nan::ThrowError((std::string("load_driver ttcompat failed - ") + error).c_str());
+        }
+    }
 #endif
 }
 

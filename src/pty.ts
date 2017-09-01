@@ -72,7 +72,7 @@ export function openpty(opts?: I.OpenPtyOptions): I.NativePty {
  * therefore after a `close()` any other call will fail.
  *
  * NOTE: Solaris behaves very different regarding pty semantics.
- * On Solaris a pty is a simple pipe where tty semantics get loaded onto the slave end.
+ * On Solaris a pty is a STREAMS clone where tty semantics get loaded onto the slave end.
  * Other than on BSDs or Linux systems that slave end must stay open to get
  * the right values for size and termios.
  * Therefore the class always holds a slave file descriptor on Solaris.
