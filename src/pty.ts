@@ -20,6 +20,7 @@ export const DEFAULT_ROWS: number = 24;
 // helper applications
 export const HELPER: string = path.join(__dirname, '..', 'build', 'Release', 'helper');
 export const STDERR_TESTER: string = path.join(__dirname, '..', 'build', 'Release', 'stderr_tester');
+export const SOLARIS_HELPER: string = path.join(__dirname, '..', 'build', 'Release', 'solaris_helper');
 
 
 
@@ -88,8 +89,12 @@ export class RawPty implements I.IRawPty {
     }
     constructor(options?: I.RawPtyOptions) {
         this._nativePty = openpty(options);
-        if (process.platform === 'sunos')
-            this._solarisShadowSlave = this._nativePty.slave;
+        //if (process.platform === 'sunos')
+        //    this._solarisShadowSlave = this._nativePty.slave;
+
+        if (process.platform === 'sunos') {
+            let slave_holder: cp.ChildProcess = cp.spawn(SOLARIS_HELPER, [this._nativePty.slavepath]);
+        }
     }
     public get master_fd(): number {
         this._is_usable();
@@ -109,8 +114,8 @@ export class RawPty implements I.IRawPty {
             fs.closeSync(this._nativePty.master);
         if (this._nativePty.slave !== -1)
             try { fs.closeSync(this._nativePty.slave); } catch (e) {}
-        if (process.platform === 'sunos')
-            try { fs.closeSync(this._solarisShadowSlave); } catch (e) {}
+        //if (process.platform === 'sunos')
+        //    try { fs.closeSync(this._solarisShadowSlave); } catch (e) {}
         this._nativePty.master = -1;
         this._nativePty.slave = -1;
         this._nativePty.slavepath = '';
@@ -118,11 +123,11 @@ export class RawPty implements I.IRawPty {
     public open_slave(): number {
         this._is_usable();
         if (this._nativePty.slave === -1) {
-            if (process.platform !== 'sunos')
+            //if (process.platform !== 'sunos')
                 this._nativePty.slave = fs.openSync(this._nativePty.slavepath,
                     native.FD_FLAGS.O_RDWR | native.FD_FLAGS.O_NOCTTY);
-            else
-                this._nativePty.slave = this._solarisShadowSlave;
+            //else
+            //    this._nativePty.slave = this._solarisShadowSlave;
         }
         return this._nativePty.slave;
     }
@@ -130,7 +135,7 @@ export class RawPty implements I.IRawPty {
         this._is_usable();
         if (this._nativePty.slave !== -1) {
             // slave cannot be closed on solaris
-            if (process.platform !== 'sunos')
+            //if (process.platform !== 'sunos')
                 fs.closeSync(this._nativePty.slave);
         }
         this._nativePty.slave = -1;
@@ -171,9 +176,9 @@ export class RawPty implements I.IRawPty {
         if (this._nativePty.slave !== -1)
             return new Termios(this._nativePty.slave);
         // special case for solaris
-        if (process.platform === 'sunos') {
-            return new Termios(this._solarisShadowSlave);
-        }
+        //if (process.platform === 'sunos') {
+        //    return new Termios(this._solarisShadowSlave);
+        //}
         // fall through to master end (not working on solaris)
         return new Termios(this._nativePty.master);
     }
@@ -185,10 +190,10 @@ export class RawPty implements I.IRawPty {
             return;
         }
         // special case for solaris
-        if (process.platform === 'sunos') {
-            termios.writeTo(this._solarisShadowSlave, action);
-            return;
-        }
+        //if (process.platform === 'sunos') {
+        //    termios.writeTo(this._solarisShadowSlave, action);
+        //    return;
+        //}
         // fall through to master end (not working on solaris)
         termios.writeTo(this._nativePty.master, action);
     }

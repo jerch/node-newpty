@@ -15,6 +15,8 @@
 #endif
 
 int main(int argc, char *argv[]) {
+    if (argc < 2)
+        return 1;
 #if defined(TIOCSCTTY)
     if (ioctl(STDIN_FILENO, TIOCSCTTY, NULL) == -1)
         return -1;
