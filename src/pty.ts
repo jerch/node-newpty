@@ -53,7 +53,6 @@ export function openpty(opts?: I.OpenPtyOptions): I.NativePty {
 }
 
 
-
 /**
  * RawPty - class to hold a pty device.
  *
@@ -81,7 +80,6 @@ export function openpty(opts?: I.OpenPtyOptions): I.NativePty {
  */
 export class RawPty implements I.IRawPty {
     private _nativePty: I.NativePty;
-    private _slave_holder: cp.ChildProcess;
     private _size: I.Size;
     private _termios: ICTermios;
     private _is_usable(): void {
