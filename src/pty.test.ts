@@ -7,7 +7,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as pty from './pty';
 import * as Interfaces from './interfaces';
-import {Termios, ICTermios} from 'node-termios';
+import {Termios, ITermios} from 'node-termios';
 
 describe('native functions', () => {
     it('ptname/grantpt/unlockpt + open slave', () => {
@@ -188,7 +188,7 @@ describe('class RawPty', () => {
     it('get/set termios', () => {
         // load termios from stdin
         let rawPty: pty.RawPty = new pty.RawPty({termios: new Termios(0)});
-        let termios: ICTermios = rawPty.get_termios();
+        let termios: ITermios = rawPty.get_termios();
         assert.deepEqual(termios, new Termios(0));
         // termios should not interfere with slave state (reopens slave on solaris)
         rawPty.close_slave();

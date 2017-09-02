@@ -2,15 +2,14 @@ import * as I from './interfaces';
 import * as fs from 'fs';
 import * as path from 'path';
 import {Socket} from 'net';
-import {Termios, ICTermios} from 'node-termios';
+import {ITermios, Termios, native as termiosNative} from 'node-termios';
 import {EventEmitter} from 'events';
 import * as cp from 'child_process';
 import * as tty from 'tty';
 
 // cant import ReadStream?
 const ReadStream = require('tty').ReadStream;
-// TODO: export symbols to TS in node-termios
-const s = require('node-termios').ALL_SYMBOLS;
+const s = termiosNative.ALL_SYMBOLS;
 
 // native module
 export const native: I.Native = require(path.join('..', 'build', 'Release', 'pty.node'));
@@ -83,7 +82,7 @@ export function openpty(opts?: I.OpenPtyOptions): I.NativePty {
 export class RawPty implements I.IRawPty {
     private _nativePty: I.NativePty;
     private _size: I.Size;
-    private _termios: ICTermios;
+    private _termios: ITermios;
     private _is_usable(): void {
         if (this._nativePty.master === -1)
             throw new Error('pty is destroyed');
@@ -183,7 +182,7 @@ export class RawPty implements I.IRawPty {
         this._is_usable();
         this.resize(this.get_size().cols, rows);
     }
-    public get_termios(): ICTermios {
+    public get_termios(): ITermios {
         this._is_usable();
         // should always work on slave end
         if (this._nativePty.slave !== -1)
@@ -193,7 +192,7 @@ export class RawPty implements I.IRawPty {
         // fall through to master end (not working on solaris)
         return new Termios(this._nativePty.master);
     }
-    public set_termios(termios: ICTermios, action?: number): void {
+    public set_termios(termios: ITermios, action?: number): void {
         this._is_usable();
         // should always work on slave end
         if (this._nativePty.slave !== -1) {
@@ -373,9 +372,9 @@ export class UnixTerminal implements I.ITerminal {
         delete env['COLUMNS'];
         delete env['LINES'];
     }
-    private static _getTermios(encoding: string): ICTermios {
+    private static _getTermios(encoding: string): ITermios {
         // termios settings taken from node-pty's pty.cc
-        let termios: ICTermios = new Termios();
+        let termios: ITermios = new Termios();
         termios.c_iflag = s.ICRNL | s.IXON | s.IXANY | s.IMAXBEL | s.BRKINT;
         if (encoding === 'utf8' && s.IUTF8)
             termios.c_iflag |= s.IUTF8;

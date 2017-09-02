@@ -13,7 +13,7 @@
   "license": "MIT",
   "dependencies": {
     "nan": "^2.6.2",
-    "node-termios": "git+https://github.com/jerch/node-termios.git"
+    "node-termios": "0.0.9"
   },
   "devDependencies": {
     "@types/node": "^8.0.25",

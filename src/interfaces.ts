@@ -1,6 +1,6 @@
 import {Socket} from 'net';
 import * as cp from 'child_process';
-import {ICTermios} from 'node-termios';
+import {ITermios} from 'node-termios';
 import {ReadStream} from 'tty';
 
 
@@ -73,7 +73,7 @@ export interface  PtyChannels {
  * options for openpty and RawPty()
  */
 export interface OpenPtyOptions {
-    termios?: ICTermios;
+    termios?: ITermios;
     size?: Size;
 }
 export type RawPtyOptions = OpenPtyOptions;
@@ -160,14 +160,14 @@ export interface IRawPty {
     /**
      * get the termios settings of the pty
      */
-    get_termios(): ICTermios;
+    get_termios(): ITermios;
 
     /**
      * set the termios settings of the pty
      * @param termios
      * @param action
      */
-    set_termios(termios: ICTermios, action?: number): void;
+    set_termios(termios: ITermios, action?: number): void;
 }
 
 
@@ -227,7 +227,7 @@ export interface PtySpawnOptions extends cp.SpawnOptions {
     /**
      * termios settings applied to the pty device
      */
-    termios?: ICTermios;
+    termios?: ITermios;
 
     /**
      * size settings applied to the new pty device
