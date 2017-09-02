@@ -38,13 +38,6 @@ obj->Set(Nan::New<String>(name).ToLocalChecked(), symbol)
   })
 #endif
 
-
-#ifndef posix_openpt
-int posix_openpt(int flags) {
-    return open("/dev/ptmx", flags);
-}
-#endif
-
 using namespace node;
 using namespace v8;
 
