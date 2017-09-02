@@ -10,7 +10,7 @@ import * as tty from 'tty';
 // cant import ReadStream?
 const ReadStream = require('tty').ReadStream;
 // TODO: export symbols to TS in node-termios
-const s = require('node-termios').native.ALL_SYMBOLS;
+const s = require('node-termios').ALL_SYMBOLS;
 
 // native module
 export const native: I.Native = require(path.join('..', 'build', 'Release', 'pty.node'));
