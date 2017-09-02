@@ -6,12 +6,11 @@ import {Termios, ICTermios} from 'node-termios';
 import {EventEmitter} from 'events';
 import * as cp from 'child_process';
 import * as tty from 'tty';
-import {Duplex} from "stream";
-import {Readable} from "stream";
-import {Writable} from "stream";
 
 // cant import ReadStream?
 const ReadStream = require('tty').ReadStream;
+// TODO: export symbols to TS in node-termios
+const s = require('node-termios').native.ALL_SYMBOLS;
 
 // native module
 export const native: I.Native = require(path.join('..', 'build', 'Release', 'pty.node'));
@@ -90,6 +89,7 @@ export class RawPty implements I.IRawPty {
             throw new Error('pty is destroyed');
     }
     private _prepare_slave(fd: number): void {
+        this._is_usable();
         if (process.platform === 'sunos') {
             native.load_driver(this._nativePty.slave);
             this._termios.writeTo(this._nativePty.slave);
@@ -287,39 +287,6 @@ export class Pty extends RawPty implements I.IPty {
 
 
 /**
- * helper class to merge stdin and stdout
- */
-export class MasterSocket extends Duplex {
-    private _reader: Readable;
-    private _writer: Writable;
-    constructor(reader: Readable, writer: Writable) {
-        let opts: any = {allowHalfOpen: false};
-        super(opts);
-        this._reader = reader;
-        this._writer = writer;
-        this._reader.pause();
-
-        this._reader.on('data', (data) => {
-            if (!this.push(data)) {
-                this._reader.pause();
-                // FIXME do we need to unshift the last data package?
-                //this._reader.unshift(data);
-            }
-        });
-        this._reader.on('close', () => {
-            this.emit('close');
-        });
-    }
-    _read(size: number) {
-        this._reader.resume();
-    }
-    _write(chunk: any, encoding: string, callback: Function) {
-        this._writer.write(chunk, encoding, callback);
-    }
-}
-
-
-/**
  * spawn - spawn a process behind it's own pty.
  */
 export function spawn(
@@ -340,63 +307,29 @@ export function spawn(
     return child;
 }
 
+
+/**
+ * Implementation of the current node-pty API
+ */
+
 function assign(target: any, ...sources: any[]): any {
   sources.forEach(source => Object.keys(source).forEach(key => target[key] = source[key]));
   return target;
 }
 
-
 const DEFAULT_FILE = 'sh';
 const DEFAULT_NAME = 'xterm';
 
-export class UnixTerminal extends EventEmitter implements I.ITerminal {
+export class UnixTerminal implements I.ITerminal {
     private _process: I.IPtyProcess;
-    public master: Duplex;
-    constructor(file?: string, args?: I.ArgvOrCommandLine, opt?: I.IPtyForkOptions) {
-        super();
-
-        args = args || [];
-        file = file || DEFAULT_FILE;
-        opt = opt || {};
-        opt.env = opt.env || process.env;
-
-        const cols = opt.cols || DEFAULT_COLS;
-        const rows = opt.rows || DEFAULT_ROWS;
-        const uid = opt.uid || -1;
-        const gid = opt.gid || -1;
-        const env = assign({}, opt.env);
-
-        if (opt.env === process.env) {
-            this._sanitizeEnv(env);
-        }
-
-        const cwd = opt.cwd || process.cwd();
-        const name = opt.name || env.TERM || DEFAULT_NAME;
-        env.TERM = name;
-        //const parsedEnv = this._parseEnv(env);
-
-        const encoding = (opt.encoding === undefined ? 'utf8' : opt.encoding);
-
-        const onexit = (code: any, signal: any) => {
-            this.emit('exit', code, signal);
-        };
-
-        //const term = pty.fork(file, args, parsedEnv, cwd, #cols, rows, uid, gid, (encoding === 'utf8'), onexit);
-        // FIXME: setup termios and apply encoding, uid+gid not working
-        let termios: ICTermios = new Termios(0);
-        this._process = spawn(file, args, {env: env, size: {cols: cols, rows: rows}, termios: termios, cwd: cwd});
-        this._process.on('exit', onexit);
-        this.master = new MasterSocket(this._process.stdout, this._process.stdin);
-
-        if (encoding !== null) {
-            this.master.setEncoding(encoding);
-            this._process.stdout.setEncoding(encoding);
-            //this._process.stdin.setEncoding(encoding);
-        }
-
-        this._process.stdout.on('close', () => { this.emit('close'); });
-    }
-    private _sanitizeEnv(env: NodeJS.ProcessEnv): void {
+    private _emitter: EventEmitter;
+    private _process_events: string[] = ['close', 'exit', 'disconnect', 'message'];
+    private _stdout_events: string[] = ['data', 'readable', 'end'];
+    private _stdin_events: string[] = ['drain', 'finish', 'pipe', 'unpipe'];
+    private _error_handler: (Error) => void;
+    public master: null;
+    public slave: null;
+    private static _sanitizeEnv(env: NodeJS.ProcessEnv): void {
         // Make sure we didn't start our server from inside tmux.
         delete env['TMUX'];
         delete env['TMUX_PANE'];
@@ -412,82 +345,177 @@ export class UnixTerminal extends EventEmitter implements I.ITerminal {
         delete env['COLUMNS'];
         delete env['LINES'];
     }
-
-    get slave(): tty.ReadStream {
-        return this._process.pty.slave;
+    private static _getTermios(encoding: string): ICTermios {
+        // termios settings taken from node-pty's pty.cc
+        let termios: ICTermios = new Termios();
+        termios.c_iflag = s.ICRNL | s.IXON | s.IXANY | s.IMAXBEL | s.BRKINT;
+        if (encoding === 'utf8' && s.IUTF8)
+            termios.c_iflag |= s.IUTF8;
+        termios.c_oflag = s.OPOST | s.ONLCR;
+        termios.c_cflag = s.CREAD | s.CS8 | s.HUPCL;
+        termios.c_lflag = s.ICANON | s.ISIG | s.IEXTEN | s.ECHO | s.ECHOE | s.ECHOK | s.ECHOKE | s.ECHOCTL;
+        termios.c_cc[s.VEOF] = 4;
+        termios.c_cc[s.VEOL] = -1;
+        termios.c_cc[s.VEOL2] = -1;
+        termios.c_cc[s.VERASE] = 0x7f;
+        termios.c_cc[s.VWERASE] = 23;
+        termios.c_cc[s.VKILL] = 21;
+        termios.c_cc[s.VREPRINT] = 18;
+        termios.c_cc[s.VINTR] = 3;
+        termios.c_cc[s.VQUIT] = 0x1c;
+        termios.c_cc[s.VSUSP] = 26;
+        termios.c_cc[s.VSTART] = 17;
+        termios.c_cc[s.VSTOP] = 19;
+        termios.c_cc[s.VLNEXT] = 22;
+        termios.c_cc[s.VDISCARD] = 15;
+        termios.c_cc[s.VMIN] = 1;
+        termios.c_cc[s.VTIME] = 0;
+        if (process.platform === 'darwin') {
+            termios.c_cc[s.VDSUSP] = 25;
+            termios.c_cc[s.VSTATUS] = 20;
+        }
+        termios.setSpeed(s.B38400);
+        return termios;
     }
+    constructor(file?: string, args?: I.ArgvOrCommandLine, opt?: I.IPtyForkOptions) {
+        this._emitter = new EventEmitter();
+        this._error_handler = (err) => { this._emitter.emit('error', err); };
 
-    get process(): string {
+        args = args || [];
+        file = file || DEFAULT_FILE;
+        opt = opt || {};
+        opt.env = opt.env || process.env;
+
+        const cols = opt.cols || DEFAULT_COLS;
+        const rows = opt.rows || DEFAULT_ROWS;
+        const uid = opt.uid || -1;
+        const gid = opt.gid || -1;
+        const env = assign({}, opt.env);
+
+        if (opt.env === process.env) {
+            UnixTerminal._sanitizeEnv(env);
+        }
+
+        const cwd = opt.cwd || process.cwd();
+        env.TERM = opt.name || env.TERM || DEFAULT_NAME;
+        const encoding = (opt.encoding === undefined ? 'utf8' : opt.encoding);
+
+        // prepare spawn options
+        let options: I.PtySpawnOptions = {};
+        options.env = env;
+        options.size = {cols: cols, rows: rows};
+        options.termios = UnixTerminal._getTermios(encoding);
+        options.cwd = cwd;
+        if (gid !== -1 && uid !== -1) {
+            options.gid = gid;
+            options.uid = uid;
+        }
+
+        // spawn pty + process
+        this._process = spawn(file, args, options);
+
+        if (encoding !== null) {
+            this._process.stdout.setEncoding(encoding);
+        }
+    }
+    public get process(): string {
         return (this._process as any).spawnargs.slice(1).join(' ');
     }
-    get pid(): number {
+    public get pid(): number {
         return this._process.pid;
     }
-    write(data: string): void {
+    public write(data: string): void {
         this._process.stdin.write(data);
     }
-    resize(cols: number, rows: number): void {
+    public read(size?: number) {
+        return this._process.stdout.read(size);
+    }
+    public resize(cols: number, rows: number): void {
         this._process.pty.resize(cols, rows);
     }
-    destroy(): void {
+    public destroy(): void {
         this._process.pty.close_master_streams();
         this._process.pty.close_slave_stream();
         this._process.pty.close();
         this._process.kill('SIGHUP');
     }
-    kill(signal?: string): void {
+    public kill(signal?: string): void {
         this._process.kill(signal);
     }
-    setEncoding(encoding: string): void {
+    public setEncoding(encoding: string): void {
         if ((this._process.stdout as any)._decoder)
             delete (this._process.stdout as any)._decoder;
-        if ((this._process.stdin as any)._decoder)
-            delete (this._process.stdin as any)._decoder;
         if (encoding) {
             this._process.stdout.setEncoding(encoding);
-            //this._process.stdin.setEncoding(encoding);
         }
     }
-    resume(): void {
+    public end(data: string, encoding?: string): void{
+        this._process.stdin.end(data, encoding);
+    }
+    public pipe(dest: any, options: any): any {
+        return this._process.stdout.pipe(dest, options);
+    }
+    public resume(): void {
         this._process.stdout.resume();
-        //this._process.stdin.resume();
     }
-    pause(): void {
+    public pause(): void {
         this._process.stdout.pause();
-        //this._process.stdin.pause();
     }
-    addListener(eventName: string, listener: (...args: any[]) => any): this {
+    public addListener(eventName: string, listener: (...args: any[]) => any): this {
         this.on(eventName, listener);
         return this;
     }
-    public emit(eventName: string, ...args: any[]): any {
-        return this.master.emit.apply(this.master, arguments);
+    private _routeEvent(eventName: string): EventEmitter {
+        if (this._process_events.indexOf(eventName) !== -1)
+            return this._process;
+        if (this._stdout_events.indexOf(eventName) !== -1)
+            return this._process.stdout;
+        if (this._stdin_events.indexOf(eventName) !== -1)
+            return this._process.stdin;
+        return this._emitter;
     }
-    on(eventName: string, listener: (...args: any[]) => any): this {
-        this.master.on(eventName, listener);
-        //try { this._process.stdout.on(eventName, listener); } catch (e) {}
-        //try { this._process.stdin.on(eventName, listener); } catch (e) {}
+    public on(eventName: string, listener: (...args: any[]) => any): this {
+        if (eventName === 'error' && !this._emitter.listeners('error').length) {
+            this._process.on('error', this._error_handler);
+            this._process.stdout.on('error', this._error_handler);
+            this._process.stdout.on('error', this._error_handler);
+        }
+        let emitter: EventEmitter = this._routeEvent(eventName);
+        emitter.on.apply(emitter, arguments);
         return this;
     }
-    listeners(eventName: string): Function[] {
-        return this.master.listeners(eventName);
+    public listeners(eventName: string): Function[] {
+        return this._routeEvent(eventName).listeners(eventName);
     }
-    removeListener(eventName: string, listener: (...args: any[]) => any): this {
-        this.master.removeListener(eventName, listener);
-        try { this._process.stdout.removeListener(eventName, listener); } catch (e) {}
-        try { this._process.stdin.removeListener(eventName, listener); } catch (e) {}
+    public removeListener(eventName: string, listener: (...args: any[]) => any): this {
+        let emitter: EventEmitter = this._routeEvent(eventName);
+        emitter.removeListener.apply(emitter, arguments);
+        if (eventName === 'error' && !this._emitter.listeners('error').length) {
+            this._process.removeListener('error', this._error_handler);
+            this._process.removeListener('error', this._error_handler);
+            this._process.removeListener('error', this._error_handler);
+            this._process.removeListener('error', this._error_handler);
+        }
         return this;
     }
-    removeAllListeners(eventName: string): this {
-        this.master.removeAllListeners(eventName);
-        try { this._process.stdout.removeAllListeners(eventName); } catch (e) {}
-        try { this._process.stdin.removeAllListeners(eventName); } catch (e) {}
+    public removeAllListeners(eventName: string): this {
+        this._routeEvent(eventName).removeAllListeners(eventName);
+        if (eventName === 'error') {
+            this._process.removeListener('error', this._error_handler);
+            this._process.removeListener('error', this._error_handler);
+            this._process.removeListener('error', this._error_handler);
+            this._process.removeListener('error', this._error_handler);
+        }
         return this;
     }
-    once(eventName: string, listener: (...args: any[]) => any): this {
-        this.master.once(eventName, listener);
-        try { this._process.stdout.once(eventName, listener); } catch (e) {}
-        try { this._process.stdin.once(eventName, listener); } catch (e) {}
+    public once(eventName: string, listener: (...args: any[]) => any): this {
+        let emitter: EventEmitter = this._routeEvent(eventName);
+        emitter.once.apply(emitter, arguments);
+        if (eventName === 'error') {
+            this._process.once('error', this._error_handler);
+            this._process.stdout.once('error', this._error_handler);
+            this._process.stdout.once('error', this._error_handler);
+        }
         return this;
     }
 }
