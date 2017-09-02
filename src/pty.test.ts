@@ -1,6 +1,8 @@
 if (process.platform === 'win32')
     process.exit();
 
+// FIXME: tests aborted under NetBSD  -- assertion "loop->watchers[w->fd] == w" failed
+
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as pty from './pty';

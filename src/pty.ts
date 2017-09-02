@@ -288,22 +288,47 @@ export class Pty extends RawPty implements I.IPty {
 
 /**
  * spawn - spawn a process behind it's own pty.
+ *
+ * spawn creates a new `Pty` and launches the child process with
+ * `child_process.spawn` by a small helper binary,
+ * that sets the controlling terminal to the slave end of the pty device.
+ *
+ * `options` supports additional optional parameters:
+ *  - termios   termios settings of the pty, if empty all termios flags are zeroed
+ *  - size      size settings of the pty, default `{cols: 80, rows: 24}`
+ *  - stderr    creates a separate pipe for stderr, default is false
+ *
+ *  `options.detached` is always set to `true` to get a new process group
+ *  with the new process as session leader.
+ *  `options.stdio` defaults to the slave pty end for all IO streams.
+ *  With `options.stderr` set to `true` an additional pipe for stderr will be set.
+ *  NOTE: Use the stderr feature with caution, it might confuse child processes
+ *  (e.g. bash will switch to buffered pipe mode and omit escape sequences
+ *  while zsh works as expected).
  */
-export function spawn(
-    command: string,
-    args?: string[],
-    options?: I.PtySpawnOptions): I.IPtyProcess
-{
+export function spawn(command: string, args?: string[], options?: I.PtySpawnOptions): I.IPtyProcess {
+    // prepare options for Pty
     options = options || {};
     options.auto_close = true;
+
+    // create a new pty
     let jsPty = new Pty(options);
+
+    // prepare options for child_process.spawn
     options.stdio = [jsPty.slave_fd, jsPty.slave_fd, (options.stderr) ? 'pipe' : jsPty.slave_fd];
     options.detached = true;
+
+    // launch child process
     let child: I.IPtyProcess = cp.spawn(HELPER, [command].concat(args || []), options) as I.IPtyProcess;
+
+    // append IO streams and the pty
     child.stdin = jsPty.stdin;
     child.stdout = jsPty.stdout;
     child.pty = jsPty;
+
+    // finally close slave end in this process - TODO: should this stay open?
     jsPty.close_slave();
+
     return child;
 }
 
@@ -498,6 +523,7 @@ export class UnixTerminal implements I.ITerminal {
         }
         return this;
     }
+    // FIXME: do not remove 'end' from Pty.init_master_streams
     public removeAllListeners(eventName: string): this {
         this._routeEvent(eventName).removeAllListeners(eventName);
         if (eventName === 'error') {
