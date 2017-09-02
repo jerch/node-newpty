@@ -152,12 +152,12 @@ export class RawPty implements I.IRawPty {
         if (cols < 1 || rows < 1)
             throw new Error('cols/rows must be greater 0');
         if (process.platform === 'sunos') {
-            let to_close: boolean = (this._nativePty.slave === -1);
-            if (to_close)
+            let no_slave: boolean = (this._nativePty.slave === -1);
+            if (no_slave)
                 this.open_slave();
             let size: I.Size = native.set_size(this._nativePty.slave, cols, rows);
             this._size = {cols: cols, rows: rows};
-            if (to_close)
+            if (no_slave)
                 this.close_slave();
             return size;
         }
@@ -201,10 +201,13 @@ export class RawPty implements I.IRawPty {
             return;
         }
         if (process.platform === 'sunos') {
-            this.open_slave();
+            let no_slave: boolean = (this._nativePty.slave === -1);
+            if (no_slave)
+                this.open_slave();
             termios.writeTo(this._nativePty.slave, action);
             this._termios = termios;
-            this.close_slave();
+            if (no_slave)
+                this.close_slave();
             return;
         }
         // fall through to master end (not working on solaris)
@@ -351,7 +354,7 @@ export class UnixTerminal implements I.ITerminal {
     private _process_events: string[] = ['close', 'exit', 'disconnect', 'message'];
     private _stdout_events: string[] = ['data', 'readable', 'end'];
     private _stdin_events: string[] = ['drain', 'finish', 'pipe', 'unpipe'];
-    private _error_handler: (Error) => void;
+    private _error_handler: (error: Error) => void;
     public master: null;
     public slave: null;
     private static _sanitizeEnv(env: NodeJS.ProcessEnv): void {
@@ -452,7 +455,7 @@ export class UnixTerminal implements I.ITerminal {
     public write(data: string): void {
         this._process.stdin.write(data);
     }
-    public read(size?: number) {
+    public read(size?: number): any {
         return this._process.stdout.read(size);
     }
     public resize(cols: number, rows: number): void {

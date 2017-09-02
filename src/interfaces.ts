@@ -2,7 +2,6 @@ import {Socket} from 'net';
 import * as cp from 'child_process';
 import {ICTermios} from 'node-termios';
 import {ReadStream} from 'tty';
-import {Duplex} from "stream";
 
 
 /**
@@ -281,7 +280,7 @@ export interface ITerminal {
      * The socket for the master file descriptor. This is not supported on
      * Windows.
      */
-    master: Duplex;
+    master: Socket;
 
     /**
      * The socket for the slave file descriptor. This is not supported on Windows.
