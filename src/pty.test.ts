@@ -489,7 +489,8 @@ describe('UnixTerminal', () => {
             // must run multiple times since it gets not truncated always
             let runner = function(_done) {
                 // some lengthy output call to enforce multiple pipe reads (pipe length is 2^16 in linux)
-                const term = new pty.UnixTerminal('/bin/bash', ['-c', 'dd if=/dev/zero bs=10000 count=10 status=none && echo -n "__sentinel__"'], {});
+                //const term = new pty.UnixTerminal('/bin/bash', ['-c', 'dd if=/dev/zero bs=10000 count=10 status=none && echo -n "__sentinel__"'], {});
+                const term = new pty.UnixTerminal('/bin/bash', ['-c', 'dd if=/dev/zero bs=10000 count=10 && echo -n "__sentinel__"'], {});
                 let buffer = '';
                 term.on('data', function (data) {
                     buffer += data;
