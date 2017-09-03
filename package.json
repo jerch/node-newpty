@@ -16,11 +16,12 @@
     "node-termios": "0.0.9"
   },
   "devDependencies": {
-    "@types/node": "^8.0.25",
-    "typescript": "^2.4.2",
-    "tslint": "^5.7.0",
     "@types/mocha": "^2.2.42",
+    "@types/node": "^8.0.25",
+    "cross-env": "^5.0.5",
     "mocha": "^3.5.0",
-    "cross-env": "^5.0.5"
+    "pollUntil": "^1.0.3",
+    "tslint": "^5.7.0",
+    "typescript": "^2.4.2"
   }
 }

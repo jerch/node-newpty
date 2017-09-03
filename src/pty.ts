@@ -441,9 +441,8 @@ export class UnixTerminal implements I.ITerminal {
         // spawn pty + process
         this._process = spawn(file, args, options);
 
-        if (encoding !== null) {
+        if (encoding !== null)
             this._process.stdout.setEncoding(encoding);
-        }
     }
     public get process(): string {
         return (this._process as any).spawnargs.slice(1).join(' ');

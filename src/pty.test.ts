@@ -381,3 +381,133 @@ describe('spawn', () => {
         setTimeout(() => { child.stdin.write('exit\r'); }, 500);
     });
 });
+
+import { UnixTerminal } from './pty';
+import pollUntil = require('pollUntil');
+import * as path from 'path';
+const FIXTURES_PATH = path.normalize(path.join(__dirname, '..', 'fixtures', 'utf8-character.txt'));
+
+// copied from node-pty's unixTerminal.test.ts
+describe('UnixTerminal', () => {
+    describe('Constructor', () => {
+        it('should set a valid pts name', () => {
+            const term = new UnixTerminal('/bin/bash', [], {});
+            const ttyname: string = (term as any)._process.pty.slavepath;
+            let regExp;
+            if (process.platform === 'linux') {
+                // https://linux.die.net/man/4/pts
+                regExp = /^\/dev\/pts\/\d+$/;
+            }
+            if (process.platform === 'darwin') {
+                // https://developer.apple.com/legacy/library/documentation/Darwin/Reference/ManPages/man4/pty.4.html
+                regExp = /^\/dev\/tty[p-sP-S][a-z0-9]+$/;
+            }
+            if (regExp) {
+                assert.ok(regExp.test(ttyname), '"' + ttyname + '" should match ' + regExp.toString());
+            }
+        });
+    });
+
+    describe('PtyForkEncodingOption', () => {
+        it('should default to utf8', (done) => {
+            const term = new UnixTerminal('/bin/bash', [ '-c', `cat "${FIXTURES_PATH}"` ]);
+            term.on('data', (data) => {
+                assert.equal(typeof data, 'string');
+                assert.equal(data, '\u00E6');
+                done();
+            });
+        });
+        it('should return a Buffer when encoding is null', (done) => {
+            const term = new UnixTerminal('/bin/bash', [ '-c', `cat "${FIXTURES_PATH}"` ], {
+                encoding: null,
+            });
+            term.on('data', (data) => {
+                assert.equal(typeof data, 'object');
+                assert.ok(data instanceof Buffer);
+                assert.equal(0xC3, data[0]);
+                assert.equal(0xA6, data[1]);
+                done();
+            });
+        });
+        it('should support other encodings', (done) => {
+            const text = 'test æ!';
+            const term = new UnixTerminal(null, ['-c', 'echo "' + text + '"'], {
+                encoding: 'base64'
+            });
+            let buffer = '';
+            term.on('data', (data) => {
+                assert.equal(typeof data, 'string');
+                buffer += data;
+            });
+            term.on('exit', () => {
+                assert.equal(new Buffer(buffer, 'base64').toString().replace('\r', '').replace('\n', ''), text);
+                done();
+            });
+        });
+    });
+
+    describe('open', () => {
+        let term: UnixTerminal;
+
+        afterEach(() => {
+            if (term) {
+                term.slave.destroy();
+                term.master.destroy();
+            }
+        });
+
+        it('should open a pty with access to a master and slave socket', (done) => {
+            let doneCalled = false;
+            term = UnixTerminal.open({});
+
+            let slavebuf = '';
+            term.slave.on('data', (data) => {
+                slavebuf += data;
+            });
+
+            let masterbuf = '';
+            term.master.on('data', (data) => {
+                masterbuf += data;
+            });
+
+            (<any>pollUntil)(() => {
+                if (masterbuf === 'slave\r\nmaster\r\n' && slavebuf === 'master\n') {
+                    done();
+                    return true;
+                }
+                return false;
+            }, [], 200, 10);
+
+            term.slave.write('slave\n');
+            term.master.write('master\n');
+        });
+    });
+
+    describe('check for full output', function() {
+        it('test sentinel x50', function(done) {
+            this.timeout(10000);
+            // must run multiple times since it gets not truncated always
+            let runner = function(_done) {
+                // some lengthy output call to enforce multiple pipe reads (pipe length is 2^16 in linux)
+                const term = new pty.UnixTerminal('/bin/bash', ['-c', 'dd if=/dev/zero bs=10000 count=10 status=none && echo -n "__sentinel__"'], {});
+                let buffer = '';
+                term.on('data', function (data) {
+                    buffer += data;
+                });
+                term.on('end', function () {
+                    assert.equal(buffer.slice(-12), '__sentinel__');
+                    _done();
+                });
+            };
+            let runs = 50;
+            let finished = 0;
+            let _done = function() {
+                finished += 1;
+                if (finished === runs)
+                    done();
+            };
+            for (let i=0; i<runs; ++i)
+                runner(_done);
+        });
+    });
+});

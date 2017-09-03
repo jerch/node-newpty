@@ -6,6 +6,7 @@
 #include <fcntl.h>
 #include <poll.h>
 
+
 // typical OS defines: https://sourceforge.net/p/predef/wiki/OperatingSystems/
 
 #if defined(sun) || defined(__sun)
@@ -214,16 +215,15 @@ inline void poll_thread(void *data) {
         fds[1].events = (l_pending_write) ? POLLOUT : 0;
 
         TEMP_FAILURE_RETRY(result = poll(fds, 3, POLL_TIMEOUT));
-        if (result == -1) {
-            // something unexpected happened
-            break;
-        }
+        if (result == -1)
+            break;  // something unexpected happened, exit poller
 
         // result denotes the number of file descriptors with poll events
         if (result) {
             // master write
             if (r_pending_write && fds[0].revents & POLLOUT) {
-                int w = write(master, r_buf+r_written, r_read);
+                int w;
+                TEMP_FAILURE_RETRY(w = write(master, r_buf+r_written, r_read));
                 if (w == -1)
                     break;
                 if (w == r_read) {
@@ -235,7 +235,8 @@ inline void poll_thread(void *data) {
             }
             // writer write
             if (l_pending_write && fds[1].revents & POLLOUT) {
-                int w = write(writer, l_buf+l_written, l_read);
+                int w;
+                TEMP_FAILURE_RETRY(w = write(writer, l_buf+l_written, l_read));
                 if (w == -1)
                     break;
                 if (w == l_read) {
@@ -247,7 +248,7 @@ inline void poll_thread(void *data) {
             }
             // reader read
             if (!r_pending_write && fds[2].revents & POLLIN) {
-                r_read = read(reader, r_buf, POLL_BUFSIZE);
+                TEMP_FAILURE_RETRY(r_read = read(reader, r_buf, POLL_BUFSIZE));
                 if (r_read == -1)
                     break;
                 // OSX 10.10 & Solaris: on broken pipe POLLIN is set
@@ -255,11 +256,13 @@ inline void poll_thread(void *data) {
                 if (!r_read)
                     break;
                 r_pending_write = true;
-            } else if (fds[2].revents & POLLHUP)
-                break;
+            } else if (fds[2].revents & POLLHUP) {
+                if (!(fds[0].revents & POLLIN))  // break only if all read channels are empty
+                    break;
+            }
             // master read
-            if (!l_pending_write && fds[0].revents & POLLIN) {
-                l_read = read(master, l_buf, POLL_BUFSIZE);
+            if (!l_pending_write && (fds[0].revents & POLLIN)) {
+                TEMP_FAILURE_RETRY(l_read = read(master, l_buf, POLL_BUFSIZE));
                 if (l_read == -1)
                     break;
                 // OSX 10.10 & Solaris: if slave hang up poll returns with POLLIN
@@ -273,6 +276,7 @@ inline void poll_thread(void *data) {
                 // all pending read data (no POLLIN anymore) --> fixes #85
                 if (fds[0].revents & POLLIN)
                     continue;
+                // FIXME: make sure all read channels are empty!!!
                 break;
             }
             // error on fds: POLLERR, POLLNVAL
@@ -284,8 +288,8 @@ inline void poll_thread(void *data) {
                 break;
         }
     }
-    close(writer);
-    close(reader);
+    TEMP_FAILURE_RETRY(close(writer));
+    TEMP_FAILURE_RETRY(close(reader));
     uv_async_send(&poller->async);
 }
 
