@@ -295,7 +295,7 @@ describe('class Pty', () => {
         setTimeout(() => {
             assert.equal(buffer, 'slave --> stdout\r\nstdin --> slave\r\n');
             ended();
-        }, 200);
+        }, 500);
     });
     // FIXME: not working on solaris
     it('autoclose pty', (done) => {

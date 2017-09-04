@@ -341,7 +341,7 @@ inline void poll_thread(void *data) {
         // exit once all slave hang up and the fifo got drained (linux only)
         if (fds[0].revents & POLLHUP && !(fds[0].revents & POLLIN) && lfifo.empty())
             break;
-        if (fds[1].revents & POLLHUP)
+        if (fds[1].revents & POLLHUP) // FIXME: solaris - should support other encodings fails with empty buffer
             break;
 
         for (;;) {
