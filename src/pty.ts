@@ -117,7 +117,7 @@ export class RawPty implements I.IRawPty {
     public close(): void {
         this._is_usable();
         if (this._nativePty.master !== -1)
-            fs.closeSync(this._nativePty.master);
+            try { fs.closeSync(this._nativePty.master); } catch (e) {}
         if (this._nativePty.slave !== -1)
             try { fs.closeSync(this._nativePty.slave); } catch (e) {}
         this._nativePty.master = -1;

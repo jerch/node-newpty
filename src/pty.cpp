@@ -5,7 +5,8 @@
 #include <stdlib.h>
 #include <fcntl.h>
 #include <poll.h>
-
+#include <chrono>
+#include <thread>
 
 // typical OS defines: https://sourceforge.net/p/predef/wiki/OperatingSystems/
 
@@ -25,8 +26,10 @@
 #define SET(obj, name, symbol)                                                \
 obj->Set(Nan::New<String>(name).ToLocalChecked(), symbol)
 
-#define POLL_BUFSIZE 16384  // poll thread buffer size
-#define POLL_TIMEOUT 100    // poll timeout in msec
+#define POLL_FIFOLENGTH 10      // poll fifo buffer length
+#define POLL_BUFSIZE    16384   // poll fifo single buffer size
+#define POLL_TIMEOUT    100     // poll timeout in msec
+#define POLL_SLEEP      1000    // sleep poll thread in micro seconds
 
 #ifndef TEMP_FAILURE_RETRY
 #define TEMP_FAILURE_RETRY(exp)            \
@@ -165,6 +168,80 @@ NAN_METHOD(js_pty_set_size) {
  *  to the right side until all pending data got consumed.
  */
 
+typedef struct {
+    int length;
+    int written;
+    char *data;
+} FifoEntry;
+
+class Fifo {
+public:
+    Fifo(int length, int datasize) :
+      m_last(0),
+      m_first(0),
+      m_size(0),
+      m_length(length) {
+
+        m_entries = new FifoEntry[length]();
+        m_data = new char[length * datasize]();
+        for (int i=0; i<length; ++i)
+            m_entries[i].data = &m_data[i * datasize + length];
+    }
+    ~Fifo() {
+        delete[] m_data;
+        delete[] m_entries;
+    }
+    int pushPos() {
+        return (m_size == m_length) ? -1 : m_last;
+    }
+    int popPos() {
+        return m_first;
+    }
+    FifoEntry* getPushEntry() {
+        return (m_size == m_length) ? nullptr : &m_entries[m_last];
+    }
+    FifoEntry* getPopEntry() {
+        return (m_size) ? &m_entries[m_first] : nullptr;
+    }
+    int size() {
+        return m_size;
+    }
+    bool empty() {
+        return (bool) !m_size;
+    }
+    bool full() {
+        return (bool) (m_size==m_length);
+    }
+    FifoEntry* entries() {
+        return m_entries;
+    }
+    void commitPush() {
+        if (!m_size)
+            m_first = m_last;
+        m_last++;
+        if (m_last == m_length)
+            m_last = 0;
+        m_size++;
+    }
+    void commitPop() {
+        m_size--;
+        if (!m_size)
+            m_first = -1;
+        else {
+            m_first++;
+            if (m_first == m_length)
+                m_first = 0;
+        }
+    }
+private:
+    int m_last;
+    int m_first;
+    int m_size;
+    int m_length;
+    char *m_data;
+    FifoEntry *m_entries;
+};
+
 struct Poll {
     int master;
     int read;
@@ -181,17 +258,20 @@ inline void poll_thread(void *data) {
     int reader = poller->read;    // read pipe
     int writer = poller->write;   // write pipe
 
-    // "left side" data: master --> buf --> writer
-    char l_buf[POLL_BUFSIZE];
-    bool l_pending_write = false;
-    int l_written = 0;
-    int l_read = 0;
+    // create fifo buffers
+    Fifo lfifo(POLL_FIFOLENGTH, POLL_BUFSIZE);   // master --> writer
+    Fifo rfifo(POLL_FIFOLENGTH, POLL_BUFSIZE);   // master <-- reader
 
-    // "right side" data: master <-- buf <-- reader
-    char r_buf[POLL_BUFSIZE];
-    bool r_pending_write = false;
-    int r_written = 0;
-    int r_read = 0;
+    FifoEntry *entry;
+    int r_bytes, w_bytes;
+    bool read_master_block = false;
+    bool read_reader_block = false;
+    bool write_master_block = false;
+    bool write_writer_block = false;
+    bool read_master_exit = false;
+    bool read_reader_exit = false;
+    bool write_master_exit = false;
+    bool write_writer_exit = false;
 
     struct pollfd fds[] = {
         // master is a duplex pipe --> POLLOUT | POLLIN
@@ -205,97 +285,163 @@ inline void poll_thread(void *data) {
     int result;
 
     for (;;) {
+        // poll for ready state
+
+        // final exit condition: no more data can be written
+        if (write_writer_exit && read_master_exit)
+            break;
+
         // reset struct pollfd
         fds[0].revents = 0;
         fds[1].revents = 0;
         fds[2].revents = 0;
+        if (read_master_exit)   // master has finally died (read dies after write)
+            fds[0].fd *= -1;
+        if (write_writer_exit)  // writer has died
+            fds[1].fd *= -1;
+        if (read_reader_exit)   // reader has died
+            fds[2].fd *= -1;
         // query POLLOUT only if data needs to be written
         // to avoid 100% CPU usage on empty write pipes
-        fds[0].events = (r_pending_write) ? POLLOUT | POLLIN : POLLIN;
-        fds[1].events = (l_pending_write) ? POLLOUT : 0;
+        fds[0].events = (rfifo.empty()) ? POLLIN : POLLOUT | POLLIN;
+        fds[1].events = (lfifo.empty()) ? 0 : POLLOUT;
 
         TEMP_FAILURE_RETRY(result = poll(fds, 3, POLL_TIMEOUT));
         if (result == -1)
             break;  // something unexpected happened, exit poller
+        if (!result)
+            continue;
 
-        // result denotes the number of file descriptors with poll events
-        if (result) {
-            // master write
-            if (r_pending_write && fds[0].revents & POLLOUT) {
-                int w;
-                TEMP_FAILURE_RETRY(w = write(master, r_buf+r_written, r_read));
-                if (w == -1)
-                    break;
-                if (w == r_read) {
-                    r_pending_write = false;
-                    r_written = 0;
-                } else {
-                    r_written += w;
+        // error on fds: POLLERR, POLLNVAL
+        if(fds[0].revents & POLLERR || fds[0].revents & POLLNVAL)
+            break;
+        if(fds[1].revents & POLLERR || fds[1].revents & POLLNVAL)
+            break;
+        if(fds[2].revents & POLLERR || fds[2].revents & POLLNVAL)
+            break;
+
+        // unlock working channels
+        if (fds[0].revents & POLLIN)
+            read_master_block = false;
+        if (fds[0].revents & POLLOUT)
+            write_master_block = false;
+        if (fds[1].revents & POLLOUT)
+            write_writer_block = false;
+        if (fds[2].revents & POLLIN)
+            read_reader_block = false;
+
+        // special exit conditions:
+        // exit once all slave hang up and the fifo got drained
+        if (fds[0].revents & POLLHUP && !(fds[0].revents & POLLIN) && lfifo.empty())
+            break;
+        if (fds[1].revents & POLLHUP)
+            break;
+
+        for (;;) {
+            // read master
+            if (!read_master_exit && !read_master_block) {
+                entry = lfifo.getPushEntry();
+                if (entry) {
+                    TEMP_FAILURE_RETRY(r_bytes = read(master, entry->data, POLL_BUFSIZE));
+                    if (r_bytes == -1) {
+                        if (errno == EAGAIN) {
+                            read_master_block = true;
+                        } else {
+                            read_master_exit = true;
+                            read_master_block = true;
+                        }
+                    } else {
+                        if (!r_bytes) {
+                            read_master_exit = true;
+                            read_master_block = true;
+                        } else {
+                            entry->length = r_bytes;
+                            entry->written = 0;
+                            lfifo.commitPush();
+                        }
+                    }
                 }
             }
-            // writer write
-            if (l_pending_write && fds[1].revents & POLLOUT) {
-                int w;
-                TEMP_FAILURE_RETRY(w = write(writer, l_buf+l_written, l_read));
-                if (w == -1)
-                    break;
-                if (w == l_read) {
-                    l_pending_write = false;
-                    l_written = 0;
-                } else {
-                    l_written += w;
+            // write writer
+            if (!write_writer_exit && !write_writer_block) {
+                entry = lfifo.getPopEntry();
+                if (entry) {
+                    TEMP_FAILURE_RETRY(w_bytes = write(writer, entry->data + entry->written, entry->length));
+                    if (w_bytes == -1) {
+                        if (errno == EAGAIN) {
+                            write_writer_block = true;
+                        } else {
+                            write_writer_exit = true;
+                            write_writer_block = true;
+                        }
+                    } else if (w_bytes == entry->length) {  // FIXME: how to deal with w_bytes == 0?
+                        lfifo.commitPop();
+                    } else {
+                        entry->written += w_bytes;
+                        entry->length -= w_bytes;
+                    }
                 }
             }
-            // reader read
-            if (!r_pending_write && fds[2].revents & POLLIN) {
-                TEMP_FAILURE_RETRY(r_read = read(reader, r_buf, POLL_BUFSIZE));
-                if (r_read == -1)
-                    break;
-                // OSX 10.10 & Solaris: on broken pipe POLLIN is set
-                // and read returns 0 --> EOF
-                if (!r_read)
-                    break;
-                r_pending_write = true;
-            } else if (fds[2].revents & POLLHUP) {
-                if (!(fds[0].revents & POLLIN))  // break only if all read channels are empty
-                    break;
+            // read reader
+            if (!read_reader_exit && !read_reader_block) {
+                entry = rfifo.getPushEntry();
+                if (entry) {
+                    TEMP_FAILURE_RETRY(r_bytes = read(reader, entry->data, POLL_BUFSIZE));
+                    if (r_bytes == -1) {
+                        if (errno == EAGAIN) {
+                            read_reader_block = true;
+                        } else {
+                            read_reader_exit = true;
+                            read_reader_block = true;
+                        }
+                    } else {
+                        if (!r_bytes) {
+                            read_reader_exit = true;
+                            read_reader_block = true;
+                        } else {
+                            entry->length = r_bytes;
+                            entry->written = 0;
+                            rfifo.commitPush();
+                        }
+                    }
+                }
             }
-            // master read
-            if (!l_pending_write && (fds[0].revents & POLLIN)) {
-                TEMP_FAILURE_RETRY(l_read = read(master, l_buf, POLL_BUFSIZE));
-                if (l_read == -1)
-                    break;
-                // OSX 10.10 & Solaris: if slave hang up poll returns with POLLIN
-                // and read returns 0 --> EOF
-                if (!l_read)
-                    break;
-                l_pending_write = true;
-            } else if (fds[0].revents & POLLHUP) {
-                // we got a POLLHUP (all slaves hang up and the pty got useless)
-                // special case here: don't propagate hang up until we have written
-                // all pending read data (no POLLIN anymore) --> fixes #85
-                if (fds[0].revents & POLLIN)
-                    continue;
-                // FIXME: make sure all read channels are empty!!!
-                break;
+            // write master
+            if (!write_master_exit && !write_master_block) {
+                entry = rfifo.getPopEntry();
+                if (entry) {
+                    TEMP_FAILURE_RETRY(w_bytes = write(master, entry->data + entry->written, entry->length));
+                    if (w_bytes == -1) {
+                        if (errno == EAGAIN) {
+                            write_master_block = true;
+                        } else {
+                            write_master_exit = true;
+                            write_master_block = true;
+                        }
+                    } else if (w_bytes == entry->length) {  // FIXME: how to deal with w_bytes == 0?
+                        rfifo.commitPop();
+                    } else {
+                        entry->written += w_bytes;
+                        entry->length -= w_bytes;
+                    }
+                }
             }
-            // error on fds: POLLERR, POLLNVAL
-            if(fds[0].revents & POLLERR || fds[0].revents & POLLNVAL)
+            // go to polling if no data can be moved:
+            // either no more data can be read or the fifo is full due to write blocking
+            if ( (read_master_block || lfifo.full()) && (read_reader_block || rfifo.full()) )
                 break;
-            if(fds[1].revents & POLLERR || fds[1].revents & POLLNVAL)
-                break;
-            if(fds[2].revents & POLLERR || fds[2].revents & POLLNVAL)
-                break;
+            // sleep this loop so pipes can fill up (lowers context switches)
+            std::this_thread::sleep_for(std::chrono::microseconds(POLL_SLEEP));
         }
     }
-    TEMP_FAILURE_RETRY(close(writer));
-    TEMP_FAILURE_RETRY(close(reader));
     uv_async_send(&poller->async);
 }
 
 inline void close_poll_thread(uv_handle_t *handle) {
     uv_async_t *async = (uv_async_t *) handle;
     Poll *poller = static_cast<Poll *>(async->data);
+    TEMP_FAILURE_RETRY(close(poller->write));
+    TEMP_FAILURE_RETRY(close(poller->read));
     delete poller;
 }
 
