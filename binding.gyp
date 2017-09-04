@@ -5,6 +5,15 @@
             'sources': ['src/pty.cpp'],
             'include_dirs' : ['<!(node -e "require(\'nan\')")'],
             'cflags': ['-std=c++11'],
+            'conditions': [
+                ['OS=="mac"', {
+                    'xcode_settings': {
+                        'OTHER_CPLUSPLUSFLAGS' : ['-std=c++11', '-stdlib=libc++'],
+                        'OTHER_LDFLAGS': ['-stdlib=libc++'],
+                        'MACOSX_DEPLOYMENT_TARGET': '10.7'
+                    },
+                }],
+            ],
         },
         {
             'target_name': 'helper',
