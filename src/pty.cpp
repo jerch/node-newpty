@@ -27,9 +27,9 @@
 obj->Set(Nan::New<String>(name).ToLocalChecked(), symbol)
 
 #define POLL_FIFOLENGTH 10      // poll fifo buffer length
-#define POLL_BUFSIZE    16384   // poll fifo single buffer size
+#define POLL_BUFSIZE    16384   // poll fifo entry size
 #define POLL_TIMEOUT    100     // poll timeout in msec
-#define POLL_SLEEP      1000    // sleep poll thread in micro seconds
+#define POLL_SLEEP      1500    // sleep poll thread in micro seconds
 
 #ifndef TEMP_FAILURE_RETRY
 #define TEMP_FAILURE_RETRY(exp)            \
@@ -291,6 +291,13 @@ inline void poll_thread(void *data) {
         if (write_writer_exit && read_master_exit)
             break;
 
+        // exit: all slave hung up, master and fifo is drained
+        if (read_master_exit && lfifo.empty())
+            break;
+        // exit: input hung up, no data on master to read, all fifos drained
+        if (read_reader_exit && read_master_block && rfifo.empty() && lfifo.empty())
+            break;
+
         // reset struct pollfd
         fds[0].revents = 0;
         fds[1].revents = 0;
@@ -331,10 +338,8 @@ inline void poll_thread(void *data) {
             read_reader_block = false;
 
         // special exit conditions:
-        // exit once all slave hang up and the fifo got drained
-        if (fds[0].revents & POLLHUP && !(fds[0].revents & POLLIN) && lfifo.empty()) // linux
-            break;
-        if (read_master_exit && lfifo.empty()) // BSDs
+        // exit once all slave hang up and the fifo got drained (linux only)
+        if (fds[0].revents & POLLHUP && !(fds[0].revents & POLLIN) && lfifo.empty())
             break;
         if (fds[1].revents & POLLHUP)
             break;

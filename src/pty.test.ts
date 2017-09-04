@@ -485,35 +485,36 @@ describe('UnixTerminal', () => {
     });
 */
     describe('check for full output', function() {
-        it('test sentinel x50', function(done) {
-            this.timeout(10000);
-            // must run multiple times since it gets not truncated always
-            let runner = function(_done) {
-                // some lengthy output call to enforce multiple pipe reads (pipe length is 2^16 in linux)
-                const term = new pty.UnixTerminal('/bin/bash', ['-c', 'dd if=/dev/zero bs=10000 count=10 && echo -n "__sentinel__"'], {});
-                //const term = new pty.UnixTerminal('/bin/bash', ['-c', 'ls -lR /usr/lib && echo -n "__sentinel__"'], {});
-                let buffer = '';
-                term.on('data', (data) => {
-                    buffer += data;
-                });
-                term.on('error', (err) => {
-                    console.log(err);
-                });
-                // FIXME: stdout 'close' seems to be the only safe event for empty read buffers
-                (term as any)._process.stdout.on('close', () => {
-                    assert.equal(buffer.slice(-12), '__sentinel__');
-                    _done();
-                });
-            };
-            let runs = 50;
-            let finished = 0;
-            let _done = function() {
-                finished += 1;
-                if (finished === runs)
-                    done();
-            };
-            for (let i=0; i<runs; ++i)
-                runner(_done);
-        });
+        for (let r=0; r<10; ++r)
+            it('test sentinel x5', function(done) {
+                this.timeout(5000);
+                // must run multiple times since it gets not truncated always
+                let runner = function(_done) {
+                    // some lengthy output call to enforce multiple pipe reads (pipe length is 2^16 in linux)
+                    const term = new pty.UnixTerminal('/bin/bash', ['-c', 'dd if=/dev/zero bs=10000 count=10 && echo -n "__sentinel__"'], {});
+                    //const term = new pty.UnixTerminal('/bin/bash', ['-c', 'ls -lR /usr/lib && echo -n "__sentinel__"'], {});
+                    let buffer = '';
+                    term.on('data', (data) => {
+                        buffer += data;
+                    });
+                    term.on('error', (err) => {
+                        console.log(err);
+                    });
+                    // FIXME: stdout 'close' seems to be the only safe event for empty read buffers
+                    (term as any)._process.stdout.on('close', () => {
+                        assert.equal(buffer.slice(-12), '__sentinel__');
+                        _done();
+                    });
+                };
+                let runs = 5;
+                let finished = 0;
+                let _done = function() {
+                    finished += 1;
+                    if (finished === runs)
+                        done();
+                };
+                for (let i=0; i<runs; ++i)
+                    runner(_done);
+            });
     });
 });
