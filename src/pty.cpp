@@ -332,7 +332,9 @@ inline void poll_thread(void *data) {
 
         // special exit conditions:
         // exit once all slave hang up and the fifo got drained
-        if (fds[0].revents & POLLHUP && !(fds[0].revents & POLLIN) && lfifo.empty())
+        if (fds[0].revents & POLLHUP && !(fds[0].revents & POLLIN) && lfifo.empty()) // linux
+            break;
+        if (read_master_exit && lfifo.empty()) // BSDs
             break;
         if (fds[1].revents & POLLHUP)
             break;
