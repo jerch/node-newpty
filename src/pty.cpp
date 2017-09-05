@@ -29,7 +29,7 @@ obj->Set(Nan::New<String>(name).ToLocalChecked(), symbol)
 #define POLL_FIFOLENGTH 10      // poll fifo buffer length
 #define POLL_BUFSIZE    16384   // poll fifo entry size
 #define POLL_TIMEOUT    100     // poll timeout in msec
-#define POLL_SLEEP      1500    // sleep poll thread in micro seconds
+#define POLL_SLEEP      10      // sleep poll thread in micro seconds
 
 #ifndef TEMP_FAILURE_RETRY
 #define TEMP_FAILURE_RETRY(exp)            \

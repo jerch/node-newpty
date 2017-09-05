@@ -268,12 +268,14 @@ describe('class Pty', () => {
         jsPty.close_slave_stream();
         jsPty.close_master_streams();
     });
-    it('recreate streams', (done) => {
+    it('recreate streams', (done) => {  // FIXME: close_slave_stream() needs rework after NetBSD fix
         let jsPty: pty.Pty = new pty.Pty({termios: new Termios(0), init_slave: true});
         jsPty.close_slave_stream();
         jsPty.close_master_streams();
         jsPty.init_master_streams();
         jsPty.init_slave_stream();
+        fs.writeSync(jsPty.master_fd, '');
+        jsPty.set_termios(new Termios(0));
         let wait_end: number = 2;
         let ended = (): void => {
             wait_end--;
@@ -285,17 +287,22 @@ describe('class Pty', () => {
         jsPty.slave.write('slave --> stdout\n');
         jsPty.stdin.write('stdin --> slave\n');
         jsPty.slave.on('readable', () => {
-            assert.equal(jsPty.slave.read().toString(), 'stdin --> slave\n');
-            ended();
+            let data: Buffer = jsPty.slave.read();
+            if (data) {
+                assert.equal(data.toString(), 'stdin --> slave\n');
+                ended()
+            }
         });
         let buffer: string = '';
         jsPty.stdout.on('readable', () => {
-            buffer += jsPty.stdout.read().toString();
+            let data: Buffer = jsPty.slave.read();
+            if (data)
+                buffer += jsPty.stdout.read().toString();
         });
         setTimeout(() => {
             assert.equal(buffer, 'slave --> stdout\r\nstdin --> slave\r\n');
             ended();
-        }, 500);
+        }, 1000);
     });
 });
 describe('spawn', () => {
@@ -453,36 +460,35 @@ describe('UnixTerminal', () => {
     });
 */
     describe('check for full output', function() {
-        for (let r=0; r<10; ++r)
-            it('test sentinel x5', function(done) {
-                this.timeout(5000);
-                // must run multiple times since it gets not truncated always
-                let runner = function(_done) {
-                    // some lengthy output call to enforce multiple pipe reads (pipe length is 2^16 in linux)
-                    const term = new pty.UnixTerminal('bash', ['-c', 'dd if=/dev/zero bs=10000 count=10 && echo -n "__sentinel__"'], {});
-                    //const term = new pty.UnixTerminal('bash', ['-c', 'ls -lR /usr/lib && echo -n "__sentinel__"'], {});
-                    let buffer = '';
-                    term.on('data', (data) => {
-                        buffer += data;
-                    });
-                    term.on('error', (err) => {
-                        console.log(err);
-                    });
-                    // FIXME: stdout 'close' seems to be the only safe event for empty read buffers
-                    (term as any)._process.stdout.on('close', () => {
-                        assert.equal(buffer.slice(-12), '__sentinel__');
-                        _done();
-                    });
-                };
-                let runs = 5;
-                let finished = 0;
-                let _done = function() {
-                    finished += 1;
-                    if (finished === runs)
-                        done();
-                };
-                for (let i=0; i<runs; ++i)
-                    runner(_done);
-            });
+        it('test sentinel x50', function(done) {
+            this.timeout(5000);
+            // must run multiple times since it gets not truncated always
+            let runner = function(_done) {
+                // some lengthy output call to enforce multiple pipe reads (pipe length is 2^16 in linux)
+                const term = new pty.UnixTerminal('bash', ['-c', 'dd if=/dev/zero bs=10000 count=10 && echo -n "__sentinel__"'], {});
+                //const term = new pty.UnixTerminal('bash', ['-c', 'ls -lR /usr/lib && echo -n "__sentinel__"'], {});
+                let buffer = '';
+                term.on('data', (data) => {
+                    buffer += data;
+                });
+                term.on('error', (err) => {
+                    console.log(err);
+                });
+                // FIXME: stdout 'close' seems to be the only safe event for empty read buffers
+                (term as any)._process.stdout.on('close', () => {
+                    assert.equal(buffer.slice(-12), '__sentinel__');
+                    _done();
+                });
+            };
+            let runs = 50;
+            let finished = 0;
+            let _done = function() {
+                finished += 1;
+                if (finished === runs)
+                    done();
+            };
+            for (let i=0; i<runs; ++i)
+                runner(_done);
+        });
     });
 });
