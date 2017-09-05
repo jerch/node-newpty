@@ -297,38 +297,6 @@ describe('class Pty', () => {
             ended();
         }, 500);
     });
-    // FIXME: not working on solaris
-    it('autoclose pty', (done) => {
-        let jsPty: pty.Pty = new pty.Pty({termios: new Termios(0), auto_close: true});
-        jsPty.stdout.on('close', () => {
-            assert.throws(() => { let a: number = jsPty.master_fd; });
-            done();
-        });
-        // closing slave should end the streams, any access to RawPty should fail
-        jsPty.close_slave();
-    });
-    it('no autoclose pty', (done) => {
-        let jsPty: pty.Pty = new pty.Pty({termios: new Termios(0), auto_close: false});
-        jsPty.stdout.on('close', () => {
-            assert.doesNotThrow(() => { let a: number = jsPty.master_fd; });
-            jsPty.close();
-            done();
-        });
-        // closing slave should end the streams, any access to RawPty should fail
-        jsPty.close_slave();
-    });
-    // FIXME: not working on solaris
-    it('autoclose pty with slave stream open', (done) => {
-        let jsPty: pty.Pty = new pty.Pty({termios: new Termios(0), init_slave: true, auto_close: true});
-        jsPty.stdout.on('close', () => {
-            assert.throws(() => { let a: number = jsPty.master_fd; });
-            done();
-        });
-        // closing slave should end the streams, any access to RawPty should fail
-        jsPty.close_slave();
-        // we must also close the slave stream (node dupes the file descriptor)
-        jsPty.close_slave_stream();
-    });
 });
 describe('spawn', () => {
     it('stderr redirection of child', (done) => {

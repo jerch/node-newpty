@@ -6,6 +6,7 @@ import {ITermios, Termios, native as termiosNative} from 'node-termios';
 import {EventEmitter} from 'events';
 import * as cp from 'child_process';
 import * as tty from 'tty';
+import {setTimeout} from "timers";
 
 // cant import ReadStream?
 const ReadStream = require('tty').ReadStream;
@@ -227,8 +228,6 @@ export class RawPty implements I.IRawPty {
  *
  * Upon instantiation only the master streams are created by default.
  * If you need a slave stream set `init_slave` to true or call `init_slave_stream()`.
- * With `auto_close` the master streams and the pty will close automatically
- * once all slave consumers hang up, without the underlying pty can be reused.
  */
 export class Pty extends RawPty implements I.IPty {
     private _fds: I.PtyFileDescriptors;
@@ -238,11 +237,11 @@ export class Pty extends RawPty implements I.IPty {
     constructor(options?: I.PtyOptions) {
         super(options);
         this._fds = {read: -1, write: -1};
-        this.init_master_streams((options) ? options.auto_close : false);
+        this.init_master_streams();
         if (options && options.init_slave)
             this.init_slave_stream();
     }
-    public init_master_streams(auto_close: boolean = false): void {
+    public init_master_streams(): void {
         this.close_master_streams();
         this._fds = native.get_io_channels(this.master_fd);
         this.stdin = new Socket({fd: this._fds.write, readable: false, writable: true});
@@ -251,8 +250,6 @@ export class Pty extends RawPty implements I.IPty {
         });
         this.stdout = new Socket({fd: this._fds.read, readable: true, writable: false});
         this.stdout.on('end', (): void => {
-            if (auto_close)
-                this.close();
             try { fs.closeSync(this._fds.read); } catch (e) {}
         });
     }
@@ -317,7 +314,6 @@ export class Pty extends RawPty implements I.IPty {
 export function spawn(command: string, args?: string[], options?: I.PtySpawnOptions): I.IPtyProcess {
     // prepare options for Pty
     options = options || {};
-    options.auto_close = false;
 
     // create a new pty
     let jsPty = new Pty(options);

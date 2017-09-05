@@ -84,12 +84,6 @@ export type RawPtyOptions = OpenPtyOptions;
  */
 export interface PtyOptions extends RawPtyOptions {
     /**
-     * auto_close raw pty - defaults to false
-     * destroys the pty once the slave side hangs up
-     */
-    auto_close?: boolean;
-
-    /**
      * init a slave socket - defaults to false
      * only reasonable for slave processing within this process
      * (dont use with a child process)
@@ -192,9 +186,8 @@ export interface IPty extends IRawPty {
 
     /**
      * initialize master streams (stdin, stdout), closes previous streams
-     * @param auto_close
      */
-    init_master_streams(auto_close: boolean): void;
+    init_master_streams(): void;
 
     /**
      * close master streams (stdin, stdout)
