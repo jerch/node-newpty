@@ -137,7 +137,7 @@ export class RawPty implements I.IRawPty {
     public close_slave(): void {
         this._is_usable();
         if (this._nativePty.slave !== -1) {
-            fs.closeSync(this._nativePty.slave);
+            try { fs.closeSync(this._nativePty.slave); } catch (e) {}
         }
         this._nativePty.slave = -1;
     }
@@ -279,8 +279,12 @@ export class Pty extends RawPty implements I.IPty {
         this.slave.writable = true;
     }
     public close_slave_stream(): void {
-        if (this.slave)
+        if (this.slave) {
+            this.slave.pause();
+            this.slave.end();
             this.slave.destroy();
+            this.close_slave();
+        }
         this.slave = null;
     }
     public close(): void {
