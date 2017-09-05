@@ -391,7 +391,7 @@ const FIXTURES_PATH = path.normalize(path.join(__dirname, '..', 'fixtures', 'utf
 describe('UnixTerminal', () => {
     describe('Constructor', () => {
         it('should set a valid pts name', () => {
-            const term = new UnixTerminal('/bin/bash', [], {});
+            const term = new UnixTerminal('bash', [], {});
             const ttyname: string = (term as any)._process.pty.slavepath;
             let regExp;
             if (process.platform === 'linux') {
@@ -410,7 +410,7 @@ describe('UnixTerminal', () => {
 
     describe('PtyForkEncodingOption', () => {
         it('should default to utf8', (done) => {
-            const term = new UnixTerminal('/bin/bash', [ '-c', `cat "${FIXTURES_PATH}"` ]);
+            const term = new UnixTerminal('bash', [ '-c', `cat "${FIXTURES_PATH}"` ]);
             term.on('data', (data) => {
                 assert.equal(typeof data, 'string');
                 assert.equal(data, '\u00E6');
@@ -418,7 +418,7 @@ describe('UnixTerminal', () => {
             });
         });
         it('should return a Buffer when encoding is null', (done) => {
-            const term = new UnixTerminal('/bin/bash', [ '-c', `cat "${FIXTURES_PATH}"` ], {
+            const term = new UnixTerminal('bash', [ '-c', `cat "${FIXTURES_PATH}"` ], {
                 encoding: null,
             });
             term.on('data', (data) => {
@@ -491,8 +491,8 @@ describe('UnixTerminal', () => {
                 // must run multiple times since it gets not truncated always
                 let runner = function(_done) {
                     // some lengthy output call to enforce multiple pipe reads (pipe length is 2^16 in linux)
-                    const term = new pty.UnixTerminal('/bin/bash', ['-c', 'dd if=/dev/zero bs=10000 count=10 && echo -n "__sentinel__"'], {});
-                    //const term = new pty.UnixTerminal('/bin/bash', ['-c', 'ls -lR /usr/lib && echo -n "__sentinel__"'], {});
+                    const term = new pty.UnixTerminal('bash', ['-c', 'dd if=/dev/zero bs=10000 count=10 && echo -n "__sentinel__"'], {});
+                    //const term = new pty.UnixTerminal('bash', ['-c', 'ls -lR /usr/lib && echo -n "__sentinel__"'], {});
                     let buffer = '';
                     term.on('data', (data) => {
                         buffer += data;

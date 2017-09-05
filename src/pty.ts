@@ -257,10 +257,16 @@ export class Pty extends RawPty implements I.IPty {
         });
     }
     public close_master_streams(): void {
-        if (this.stdin)
+        if (this.stdin) {
+            this.stdin.pause();
+            this.stdin.end();
             this.stdin.destroy();
-        if (this.stdout)
+        }
+        if (this.stdout) {
+            this.stdout.pause();
+            this.stdout.end();
             this.stdout.destroy();
+        }
         this.stdin = null;
         this.stdout = null;
         try { fs.closeSync(this._fds.read); } catch (e) {}
@@ -311,7 +317,7 @@ export class Pty extends RawPty implements I.IPty {
 export function spawn(command: string, args?: string[], options?: I.PtySpawnOptions): I.IPtyProcess {
     // prepare options for Pty
     options = options || {};
-    options.auto_close = true;
+    options.auto_close = false;
 
     // create a new pty
     let jsPty = new Pty(options);
