@@ -341,7 +341,7 @@ inline void poll_thread(void *data) {
         // exit once all slave hang up and the fifo got drained (linux only)
         if (fds[0].revents & POLLHUP && !(fds[0].revents & POLLIN) && lfifo.empty())
             break;
-        // no more data can be written to JS
+        // no more data can be written to JS and fifo to master is empty
         if (fds[1].revents & POLLHUP && rfifo.empty())
             break;
 
