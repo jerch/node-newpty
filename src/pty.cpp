@@ -436,10 +436,11 @@ inline void poll_thread(void *data) {
             }
             // go to polling if no data can be moved:
             // either no more data can be read or the fifo is full due to write blocking
-            if ( (read_master_block || lfifo.full()) && (read_reader_block || rfifo.full()) )
-                break;
+            //if ( (read_master_block || lfifo.full()) && (read_reader_block || rfifo.full()) )
+            //    break;
             // sleep this loop so pipes can fill up (lowers context switches)
-            std::this_thread::sleep_for(std::chrono::microseconds(POLL_SLEEP));
+            //std::this_thread::sleep_for(std::chrono::microseconds(POLL_SLEEP));
+            break;
         }
     }
     uv_async_send(&poller->async);
