@@ -248,6 +248,7 @@ struct Poll {
     int write;
     uv_async_t async;
     uv_thread_t tid;
+    Nan::Persistent<v8::Function> cb;
 };
 #include <ctime>
 inline void poll_thread(void *data) {
@@ -449,17 +450,24 @@ inline void poll_thread(void *data) {
             //std::this_thread::sleep_for(std::chrono::microseconds(POLL_SLEEP));
             //break;
         }
-        std::this_thread::sleep_for(std::chrono::microseconds(1000));
+        std::this_thread::sleep_for(std::chrono::microseconds(10));
     }
     printf("runs: %d %f ms\n", counter, (std::clock() - start) / (double)(CLOCKS_PER_SEC / 1000));
     uv_async_send(&poller->async);
 }
 
 inline void close_poll_thread(uv_handle_t *handle) {
+    Nan::HandleScope scope;
     uv_async_t *async = (uv_async_t *) handle;
     Poll *poller = static_cast<Poll *>(async->data);
+    v8::Local<v8::Function> cb = Nan::New<v8::Function>(poller->cb);
+    poller->cb.Reset();
+    //memset(&baton->cb, -1, sizeof(baton->cb));
+    Nan::Callback(cb).Call(Nan::GetCurrentContext()->Global(), 0, nullptr);
+    write(poller->write, nullptr, 0);
     TEMP_FAILURE_RETRY(close(poller->write));
     TEMP_FAILURE_RETRY(close(poller->read));
+    uv_run(uv_default_loop(), UV_RUN_NOWAIT);   // must be called so JS can spot end of pipes
     delete poller;
 }
 
@@ -468,8 +476,10 @@ inline void after_poll_thread(uv_async_t *async) {
 }
 
 NAN_METHOD(get_io_channels) {
-    if (info.Length() != 1 || !info[0]->IsNumber())
-        return Nan::ThrowError("usage: pty.get_io_channels(fd)");
+    if (info.Length() != 2
+            || !info[0]->IsNumber()
+            || !info[1]->IsFunction())
+        return Nan::ThrowError("usage: pty.get_io_channels(fd, callback)");
 
     Poll *poller = nullptr;
 
@@ -500,6 +510,7 @@ NAN_METHOD(get_io_channels) {
     poller->read = pipes2[0];
     poller->write = pipes1[1];
     poller->async.data = poller;
+    poller->cb.Reset(v8::Local<v8::Function>::Cast(info[1]));
 
     uv_async_init(uv_default_loop(), &poller->async, after_poll_thread);
     uv_thread_create(&poller->tid, poll_thread, static_cast<void *>(poller));
