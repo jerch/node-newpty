@@ -249,7 +249,7 @@ struct Poll {
     uv_async_t async;
     uv_thread_t tid;
 };
-
+#include <ctime>
 inline void poll_thread(void *data) {
     Poll *poller = static_cast<Poll *>(data);
 
@@ -283,8 +283,12 @@ inline void poll_thread(void *data) {
         {reader, POLLIN, 0}
     };
     int result;
+    int counter = 0;
+    std::clock_t start;
+    start = std::clock();
 
     for (;;) {
+        counter++;
         // poll for ready state
 
         // final exit condition: no more data can be written
@@ -439,10 +443,11 @@ inline void poll_thread(void *data) {
             //if ( (read_master_block || lfifo.full()) && (read_reader_block || rfifo.full()) )
             //    break;
             // sleep this loop so pipes can fill up (lowers context switches)
-            //std::this_thread::sleep_for(std::chrono::microseconds(POLL_SLEEP));
+            std::this_thread::sleep_for(std::chrono::microseconds(POLL_SLEEP));
             break;
         }
     }
+    printf("runs: %d %f ms\n", counter, (std::clock() - start) / (double)(CLOCKS_PER_SEC / 1000));
     uv_async_send(&poller->async);
 }
 

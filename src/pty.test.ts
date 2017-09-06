@@ -461,7 +461,7 @@ describe('UnixTerminal', () => {
 */
     describe('check for full output', function() {
         it('test sentinel x50', function(done) {
-            this.timeout(5000);
+            this.timeout(10000);
             // must run multiple times since it gets not truncated always
             let runner = function(_done) {
                 // some lengthy output call to enforce multiple pipe reads (pipe length is 2^16 in linux)
