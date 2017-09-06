@@ -26,7 +26,7 @@
 #define SET(obj, name, symbol)                                                \
 obj->Set(Nan::New<String>(name).ToLocalChecked(), symbol)
 
-#define POLL_FIFOLENGTH 10      // poll fifo buffer length
+#define POLL_FIFOLENGTH 4       // poll fifo buffer length
 #define POLL_BUFSIZE    16384   // poll fifo entry size
 #define POLL_TIMEOUT    100     // poll timeout in msec
 #define POLL_SLEEP      10      // sleep poll thread in micro seconds
@@ -349,6 +349,7 @@ inline void poll_thread(void *data) {
         if (fds[1].revents & POLLHUP && rfifo.empty())
             break;
 
+        int repoll = POLL_FIFOLENGTH * 2;
         for (;;) {
             // read master
             if (!read_master_exit && !read_master_block) {
@@ -391,6 +392,7 @@ inline void poll_thread(void *data) {
                     } else {
                         entry->written += w_bytes;
                         entry->length -= w_bytes;
+                        write_writer_block = true;
                     }
                 }
             }
@@ -435,6 +437,7 @@ inline void poll_thread(void *data) {
                     } else {
                         entry->written += w_bytes;
                         entry->length -= w_bytes;
+                        write_master_block = true;
                     }
                 }
             }
@@ -443,9 +446,29 @@ inline void poll_thread(void *data) {
             //if ( (read_master_block || lfifo.full()) && (read_reader_block || rfifo.full()) )
             //    break;
             // sleep this loop so pipes can fill up (lowers context switches)
-            std::this_thread::sleep_for(std::chrono::microseconds(POLL_SLEEP));
+            //std::this_thread::sleep_for(std::chrono::microseconds(POLL_SLEEP));
+
+            // exit busy loop to reevaluate blocking channels in poll
+            if (!repoll--)
+                break;
+
+            // TODO: check exit conditions for inner loop - to many polls still
+
+            // master can be read and written to lfifo
+            if (!read_master_block && !lfifo.full())
+                continue;
+            // lfifo can write to writer
+            if (!lfifo.empty() && !write_writer_block)
+                continue;
+            // reader can be read and written to rfifo
+            if (!read_reader_block && !rfifo.full())
+                continue;
+            // rfifo can write to master
+            if (!rfifo.empty() && !write_master_block)
+                continue;
             break;
         }
+        std::this_thread::sleep_for(std::chrono::microseconds(POLL_SLEEP));
     }
     printf("runs: %d %f ms\n", counter, (std::clock() - start) / (double)(CLOCKS_PER_SEC / 1000));
     uv_async_send(&poller->async);
