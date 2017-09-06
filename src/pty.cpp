@@ -26,7 +26,7 @@
 #define SET(obj, name, symbol)                                                \
 obj->Set(Nan::New<String>(name).ToLocalChecked(), symbol)
 
-#define POLL_FIFOLENGTH 10      // poll fifo buffer length
+#define POLL_FIFOLENGTH 4      // poll fifo buffer length
 #define POLL_BUFSIZE    16384   // poll fifo entry size
 #define POLL_TIMEOUT    100     // poll timeout in msec
 #define POLL_SLEEP      10      // sleep poll thread in micro seconds
@@ -440,12 +440,16 @@ inline void poll_thread(void *data) {
             }
             // go to polling if no data can be moved:
             // either no more data can be read or the fifo is full due to write blocking
-            //if ( (read_master_block || lfifo.full()) && (read_reader_block || rfifo.full()) )
+            //std::this_thread::sleep_for(std::chrono::microseconds(POLL_SLEEP));
+            if ( (read_master_block || lfifo.full()) && (read_reader_block || rfifo.full()) )
+                break;
+            //if ( read_master_block || lfifo.full() || read_reader_block || rfifo.full() )
             //    break;
             // sleep this loop so pipes can fill up (lowers context switches)
-            std::this_thread::sleep_for(std::chrono::microseconds(POLL_SLEEP));
-            break;
+            //std::this_thread::sleep_for(std::chrono::microseconds(POLL_SLEEP));
+            //break;
         }
+        std::this_thread::sleep_for(std::chrono::microseconds(1000));
     }
     printf("runs: %d %f ms\n", counter, (std::clock() - start) / (double)(CLOCKS_PER_SEC / 1000));
     uv_async_send(&poller->async);
