@@ -29,7 +29,6 @@ obj->Set(Nan::New<String>(name).ToLocalChecked(), symbol)
 #define POLL_FIFOLENGTH 4       // poll fifo buffer length
 #define POLL_BUFSIZE    16384   // poll fifo entry size
 #define POLL_TIMEOUT    100     // poll timeout in msec
-#define POLL_SLEEP      1000    // sleep poll thread in micro seconds
 
 #ifndef TEMP_FAILURE_RETRY
 #define TEMP_FAILURE_RETRY(exp)            \
@@ -307,21 +306,40 @@ inline void poll_thread(void *data) {
         fds[1].revents = 0;
         fds[2].revents = 0;
         if (read_master_exit)   // master has finally died (read dies after write)
-            fds[0].fd *= -1;
+            fds[0].fd = -1;
+        else
+            // need to remove master from fds under linux if already hung up
+            // and pending data cant be read (fifo full) to avoid busy polling with POLLHUP
+            fds[0].fd = (lfifo.full() && write_master_exit) ? -1 : master;
         if (write_writer_exit)  // writer has died
-            fds[1].fd *= -1;
+            fds[1].fd = -1;
         if (read_reader_exit)   // reader has died
-            fds[2].fd *= -1;
+            fds[2].fd = -1;
         // query POLLOUT only if data needs to be written
         // to avoid 100% CPU usage on empty write pipes
-        fds[0].events = (rfifo.empty()) ? POLLIN : POLLOUT | POLLIN;
+        fds[0].events = (rfifo.empty()) ? (lfifo.full()?0:POLLIN) : POLLOUT | (lfifo.full()?0:POLLIN);
         fds[1].events = (lfifo.empty()) ? 0 : POLLOUT;
+        fds[2].events = (rfifo.full()) ? 0 : POLLIN;
 
         TEMP_FAILURE_RETRY(result = poll(fds, 3, POLL_TIMEOUT));
         if (result == -1)
             break;  // something unexpected happened, exit poller
         if (!result)
             continue;
+
+        // special case linux
+        // ignore POLLHUP until no more data can be read
+        if(fds[0].revents & POLLHUP) {
+            write_master_exit = true;
+            if (!lfifo.full() && !(fds[0].revents & POLLIN))
+                read_master_exit = true;
+        }
+        if (fds[1].revents & POLLHUP)
+            write_writer_exit = true;
+        if(fds[2].revents & POLLHUP) {
+            if (!rfifo.full() && !(fds[2].revents & POLLIN))
+                read_reader_exit = true;
+        }
 
         // error on fds: POLLERR, POLLNVAL
         if(fds[0].revents & POLLERR || fds[0].revents & POLLNVAL)
@@ -468,7 +486,6 @@ inline void poll_thread(void *data) {
                 continue;
             break;
         }
-        std::this_thread::sleep_for(std::chrono::microseconds(POLL_SLEEP));
     }
     printf("runs: %d %f ms\n", counter, (std::clock() - start) / (double)(CLOCKS_PER_SEC / 1000));
     uv_async_send(&poller->async);
