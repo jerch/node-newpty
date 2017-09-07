@@ -282,12 +282,12 @@ inline void poll_thread(void *data) {
         {reader, POLLIN, 0}
     };
     int result;
-    int counter = 0;
-    std::clock_t start;
-    start = std::clock();
+    //int counter = 0;
+    //std::clock_t start;
+    //start = std::clock();
 
     for (;;) {
-        counter++;
+        //counter++;
         // poll for ready state
 
         // final exit condition: no more data can be written
@@ -317,7 +317,9 @@ inline void poll_thread(void *data) {
             fds[2].fd = -1;
         // query POLLOUT only if data needs to be written
         // to avoid 100% CPU usage on empty write pipes
-        fds[0].events = (rfifo.empty()) ? (lfifo.full()?0:POLLIN) : POLLOUT | (lfifo.full()?0:POLLIN);
+        fds[0].events = (rfifo.empty())
+            ? (lfifo.full() ? 0 : POLLIN)
+            : POLLOUT | (lfifo.full() ? 0 : POLLIN);
         fds[1].events = (lfifo.empty()) ? 0 : POLLOUT;
         fds[2].events = (rfifo.full()) ? 0 : POLLIN;
 
@@ -327,6 +329,7 @@ inline void poll_thread(void *data) {
         if (!result)
             continue;
 
+#ifdef __linux__
         // special case linux
         // ignore POLLHUP until no more data can be read
         if(fds[0].revents & POLLHUP) {
@@ -340,6 +343,7 @@ inline void poll_thread(void *data) {
             if (!rfifo.full() && !(fds[2].revents & POLLIN))
                 read_reader_exit = true;
         }
+#endif
 
         // error on fds: POLLERR, POLLNVAL
         if(fds[0].revents & POLLERR || fds[0].revents & POLLNVAL)
@@ -487,7 +491,7 @@ inline void poll_thread(void *data) {
             break;
         }
     }
-    printf("runs: %d %f ms\n", counter, (std::clock() - start) / (double)(CLOCKS_PER_SEC / 1000));
+    //printf("runs: %d %f ms\n", counter, (std::clock() - start) / (double)(CLOCKS_PER_SEC / 1000));
     uv_async_send(&poller->async);
 }
 
