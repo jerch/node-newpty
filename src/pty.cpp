@@ -8,6 +8,12 @@
 #include <chrono>
 #include <thread>
 
+// some global settings
+#define POLL_FIFOLENGTH 4       // poll fifo buffer length
+#define POLL_BUFSIZE    16384   // poll fifo entry size
+#define POLL_TIMEOUT    100     // poll timeout in msec
+
+
 // typical OS defines: https://sourceforge.net/p/predef/wiki/OperatingSystems/
 
 #if defined(sun) || defined(__sun)
@@ -25,10 +31,6 @@
 // macro for object attributes
 #define SET(obj, name, symbol)                                                \
 obj->Set(Nan::New<String>(name).ToLocalChecked(), symbol)
-
-#define POLL_FIFOLENGTH 4       // poll fifo buffer length
-#define POLL_BUFSIZE    16384   // poll fifo entry size
-#define POLL_TIMEOUT    100     // poll timeout in msec
 
 #ifndef TEMP_FAILURE_RETRY
 #define TEMP_FAILURE_RETRY(exp)            \
