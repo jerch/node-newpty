@@ -173,6 +173,14 @@ typedef struct {
     char *data;
 } FifoEntry;
 
+/**
+ * Special fifo class for read/write syscalls
+ *
+ * The class implements a ring buffer with special commit methods
+ * to indicate successful read/write operations.
+ * The data part of the entries is fixed and allocated upon initialization
+ * to minimize malloc, free and memcpy invocations.
+ */
 class Fifo {
 public:
     Fifo(int length, int datasize) :
@@ -180,7 +188,6 @@ public:
       m_first(0),
       m_size(0),
       m_length(length) {
-
         m_entries = new FifoEntry[length]();
         m_data = new char[length * datasize]();
         for (int i=0; i<length; ++i)
@@ -189,12 +196,6 @@ public:
     ~Fifo() {
         delete[] m_data;
         delete[] m_entries;
-    }
-    int pushPos() {
-        return (m_size == m_length) ? -1 : m_last;
-    }
-    int popPos() {
-        return m_first;
     }
     FifoEntry* getPushEntry() {
         return (m_size == m_length) ? nullptr : &m_entries[m_last];
@@ -209,28 +210,17 @@ public:
         return (bool) !m_size;
     }
     bool full() {
-        return (bool) (m_size==m_length);
-    }
-    FifoEntry* entries() {
-        return m_entries;
+        return (bool) (m_size == m_length);
     }
     void commitPush() {
-        if (!m_size)
-            m_first = m_last;
         m_last++;
-        if (m_last == m_length)
-            m_last = 0;
+        m_last %= m_length;
         m_size++;
     }
     void commitPop() {
+        m_first++;
+        m_first %= m_length;
         m_size--;
-        if (!m_size)
-            m_first = -1;
-        else {
-            m_first++;
-            if (m_first == m_length)
-                m_first = 0;
-        }
     }
 private:
     int m_last;
@@ -248,7 +238,7 @@ struct Poll {
     uv_async_t async;
     uv_thread_t tid;
 };
-#include <ctime>
+
 inline void poll_thread(void *data) {
     Poll *poller = static_cast<Poll *>(data);
 
@@ -282,14 +272,9 @@ inline void poll_thread(void *data) {
         {reader, POLLIN, 0}
     };
     int result;
-    //int counter = 0;
-    //std::clock_t start;
-    //start = std::clock();
 
+    // poll loop
     for (;;) {
-        //counter++;
-        // poll for ready state
-
         // final exit condition: no more data can be written
         if (write_writer_exit && read_master_exit)
             break;
@@ -305,6 +290,8 @@ inline void poll_thread(void *data) {
         fds[0].revents = 0;
         fds[1].revents = 0;
         fds[2].revents = 0;
+
+        // adjust fds in poll struct
         if (read_master_exit)   // master has finally died (read dies after write)
             fds[0].fd = -1;
         else
@@ -315,21 +302,22 @@ inline void poll_thread(void *data) {
             fds[1].fd = -1;
         if (read_reader_exit)   // reader has died
             fds[2].fd = -1;
+
         // query POLLOUT only if data needs to be written
-        // to avoid 100% CPU usage on empty write pipes
         fds[0].events = (rfifo.empty())
             ? (lfifo.full() ? 0 : POLLIN)
             : POLLOUT | (lfifo.full() ? 0 : POLLIN);
         fds[1].events = (lfifo.empty()) ? 0 : POLLOUT;
         fds[2].events = (rfifo.full()) ? 0 : POLLIN;
 
+        // finally poll
         TEMP_FAILURE_RETRY(result = poll(fds, 3, POLL_TIMEOUT));
         if (result == -1)
-            break;  // something unexpected happened, exit poller
+            break;  // something unexpected happened, exit poll thread
         if (!result)
             continue;
 
-#ifdef __linux__
+#if defined(__linux__)
         // special case linux
         // ignore POLLHUP until no more data can be read
         if(fds[0].revents & POLLHUP) {
@@ -345,7 +333,7 @@ inline void poll_thread(void *data) {
         }
 #endif
 
-        // error on fds: POLLERR, POLLNVAL
+        // exit on fd error: POLLERR, POLLNVAL
         if(fds[0].revents & POLLERR || fds[0].revents & POLLNVAL)
             break;
         if(fds[1].revents & POLLERR || fds[1].revents & POLLNVAL)
@@ -363,7 +351,7 @@ inline void poll_thread(void *data) {
         if (fds[2].revents & POLLIN)
             read_reader_block = false;
 
-        // special exit conditions:
+        // special post poll exit conditions:
         // exit once all slave hang up and the fifo got drained (linux only)
         if (fds[0].revents & POLLHUP && !(fds[0].revents & POLLIN) && lfifo.empty())
             break;
@@ -371,8 +359,12 @@ inline void poll_thread(void *data) {
         if (fds[1].revents & POLLHUP && rfifo.empty())
             break;
 
+        // set max inner loop runs before repolling
         int repoll = POLL_FIFOLENGTH * 2;
+
+        // inner busy read/write loop
         for (;;) {
+
             // read master
             if (!read_master_exit && !read_master_block) {
                 entry = lfifo.getPushEntry();
@@ -397,11 +389,13 @@ inline void poll_thread(void *data) {
                     }
                 }
             }
+
             // write writer
             if (!write_writer_exit && !write_writer_block) {
                 entry = lfifo.getPopEntry();
                 if (entry) {
-                    TEMP_FAILURE_RETRY(w_bytes = write(writer, entry->data + entry->written, entry->length));
+                    TEMP_FAILURE_RETRY(w_bytes = write(writer, entry->data + entry->written,
+                                                       entry->length - entry->written));
                     if (w_bytes == -1) {
                         if (errno == EAGAIN) {
                             write_writer_block = true;
@@ -409,7 +403,7 @@ inline void poll_thread(void *data) {
                             write_writer_exit = true;
                             write_writer_block = true;
                         }
-                    } else if (w_bytes == entry->length) {  // FIXME: how to deal with w_bytes == 0?
+                    } else if (w_bytes == entry->length) {
                         lfifo.commitPop();
                     } else {
                         entry->written += w_bytes;
@@ -418,6 +412,7 @@ inline void poll_thread(void *data) {
                     }
                 }
             }
+
             // read reader
             if (!read_reader_exit && !read_reader_block) {
                 entry = rfifo.getPushEntry();
@@ -442,11 +437,13 @@ inline void poll_thread(void *data) {
                     }
                 }
             }
+
             // write master
             if (!write_master_exit && !write_master_block) {
                 entry = rfifo.getPopEntry();
                 if (entry) {
-                    TEMP_FAILURE_RETRY(w_bytes = write(master, entry->data + entry->written, entry->length));
+                    TEMP_FAILURE_RETRY(w_bytes = write(master, entry->data + entry->written,
+                                                       entry->length - entry->written));
                     if (w_bytes == -1) {
                         if (errno == EAGAIN) {
                             write_master_block = true;
@@ -454,7 +451,7 @@ inline void poll_thread(void *data) {
                             write_master_exit = true;
                             write_master_block = true;
                         }
-                    } else if (w_bytes == entry->length) {  // FIXME: how to deal with w_bytes == 0?
+                    } else if (w_bytes == entry->length) {
                         rfifo.commitPop();
                     } else {
                         entry->written += w_bytes;
@@ -463,18 +460,10 @@ inline void poll_thread(void *data) {
                     }
                 }
             }
-            // go to polling if no data can be moved:
-            // either no more data can be read or the fifo is full due to write blocking
-            //if ( (read_master_block || lfifo.full()) && (read_reader_block || rfifo.full()) )
-            //    break;
-            // sleep this loop so pipes can fill up (lowers context switches)
-            //std::this_thread::sleep_for(std::chrono::microseconds(POLL_SLEEP));
 
             // exit busy loop to reevaluate blocking channels in poll
             if (!repoll--)
                 break;
-
-            // TODO: check exit conditions for inner loop - to many polls still
 
             // master can be read and written to lfifo
             if (!read_master_block && !lfifo.full())
@@ -491,15 +480,14 @@ inline void poll_thread(void *data) {
             break;
         }
     }
-    //printf("runs: %d %f ms\n", counter, (std::clock() - start) / (double)(CLOCKS_PER_SEC / 1000));
     uv_async_send(&poller->async);
 }
 
 inline void close_poll_thread(uv_handle_t *handle) {
-    uv_async_t *async = (uv_async_t *) handle;
-    Poll *poller = static_cast<Poll *>(async->data);
+    Poll *poller = static_cast<Poll *>(handle->data);
     TEMP_FAILURE_RETRY(close(poller->write));
     TEMP_FAILURE_RETRY(close(poller->read));
+    uv_thread_join(&poller->tid);
     delete poller;
 }
 
