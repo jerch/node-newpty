@@ -6,7 +6,6 @@ import {ITermios, Termios, native as termiosNative} from 'node-termios';
 import {EventEmitter} from 'events';
 import * as cp from 'child_process';
 import * as tty from 'tty';
-import {setTimeout} from "timers";
 
 // cant import ReadStream?
 const ReadStream = require('tty').ReadStream;
@@ -243,13 +242,13 @@ export class Pty extends RawPty implements I.IPty {
     }
     public init_master_streams(): void {
         this.close_master_streams();
-        this._fds = native.get_io_channels(this.master_fd);
+        this._fds = native.get_io_channels(this.master_fd, false);
         this.stdin = new Socket({fd: this._fds.write, readable: false, writable: true});
-        this.stdin.on('end', (): void => {
+        this.stdin.on('close', (): void => {
             try { fs.closeSync(this._fds.write); } catch (e) {}
         });
         this.stdout = new Socket({fd: this._fds.read, readable: true, writable: false});
-        this.stdout.on('end', (): void => {
+        this.stdout.on('close', (): void => {
             try { fs.closeSync(this._fds.read); } catch (e) {}
         });
     }
@@ -292,6 +291,8 @@ export class Pty extends RawPty implements I.IPty {
         this.close_master_streams();
         super.close();
     }
+    //public hangup(): void {
+    //}
 }
 
 

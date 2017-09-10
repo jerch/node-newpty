@@ -361,6 +361,7 @@ import { UnixTerminal } from './pty';
 import pollUntil = require('pollUntil');
 import * as path from 'path';
 const FIXTURES_PATH = path.normalize(path.join(__dirname, '..', 'fixtures', 'utf8-character.txt'));
+const FIXTURES = path.normalize(path.join(__dirname, '..', 'fixtures'));
 
 // copied from node-pty's unixTerminal.test.ts
 describe('UnixTerminal', () => {
@@ -459,7 +460,7 @@ describe('UnixTerminal', () => {
         });
     });
 */
-    describe('check for full output', function() {
+    describe('check for correct  input/output', function() {
         it('test sentinel x50', function(done) {
             this.timeout(10000);
             // must run multiple times since it gets not truncated always
@@ -489,6 +490,63 @@ describe('UnixTerminal', () => {
             };
             for (let i=0; i<runs; ++i)
                 runner(_done);
+        });
+    });
+});
+
+describe('test data I/O', () => {
+    it('eval big stdin data', (done) => {
+        let tester: string = path.join(FIXTURES, 'test_input.js');
+        let termios = new Termios(0);
+        // switch tty to raw mode, needed to avoid special control code handling
+        termios.setraw();
+        const child = pty.spawn('node', [tester], {stderr: true, termios: termios});
+        //const child = pty.spawn('wc', [], {stderr: true, termios: termios});
+        child.on('exit', (code, signal) => {
+            // normal exit, no signal (SIGINT gets catched by handler)
+            console.log(code, signal);
+            //assert.equal(code, 0);
+            //assert.equal(signal, null);
+        });
+        // pump file data
+        let filestream = fs.createReadStream(path.join(FIXTURES, 'random_data'));
+        filestream.pipe(child.stdin, {end: false});
+        filestream.on('close', () => {
+            child.stdin.end();
+            console.log('filestream done');
+            child.stdin.on('close', () => {
+                console.log('stdin done');
+                //child.pty.hangup();
+            });
+        });
+        // should not error on slave side
+        child.stderr.on('data', (data) => {
+            assert.equal('should not have been called', data.toString());
+        });
+        let buffer: string = '';
+        child.stdout.on('data', (data) => {
+            buffer += data.toString();
+        });
+        child.stdout.on('close', () => {
+            //assert.equal(buffer, 'true');
+            //done();
+        });
+        child.stderr.on('close', (data) => {
+            done();
+        });
+    });
+    it('eval big stdout data', (done) => {
+        let termios = new Termios(0);
+        termios.setraw();
+        const child = pty.spawn('cat', [path.join(FIXTURES, 'random_data')], {termios: termios});
+        let buffer: string = '';
+        child.stdout.on('data', (data) => {
+            buffer += data.toString();
+        });
+        child.stdout.on('close', () => {
+            let filecontent = fs.readFileSync('./fixtures/random_data', {encoding: 'binary'});
+            assert.equal(filecontent, buffer);
+            done();
         });
     });
 });
