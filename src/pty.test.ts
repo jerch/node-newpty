@@ -470,7 +470,6 @@ describe('UnixTerminal', () => {
                 //const term = new pty.UnixTerminal('bash', ['-c', 'ls -lR /usr/lib && echo -n "__sentinel__"'], {});
                 let buffer = '';
                 term.on('data', (data) => {
-                    //console.log(data);
                     buffer += data;
                 });
                 term.on('error', (err) => {

@@ -291,8 +291,6 @@ export class Pty extends RawPty implements I.IPty {
         this.close_master_streams();
         super.close();
     }
-    //public hangup(): void {
-    //}
 }
 
 
