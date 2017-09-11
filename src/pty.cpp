@@ -237,20 +237,11 @@ struct Poll {
     int master;
     int read;
     int write;
-    bool close_on_write_exit;
     uv_async_t async;
     uv_thread_t tid;
 };
 
-inline void close_master(uv_async_t *async) {
-    int *master = static_cast<int *>(async->data);
-    //printf("we got called?\n");
-    close(*master);
-    //uv_close((uv_handle_t *) async, nullptr);
-}
-
 #include <ctime>
-
 inline void poll_thread(void *data) {
     Poll *poller = static_cast<Poll *>(data);
 
@@ -300,7 +291,7 @@ inline void poll_thread(void *data) {
         if (read_master_exit && lfifo.empty())
             break;
         // exit: input hung up, no data on master to read, all fifos drained
-        if (read_reader_exit && read_master_exit && rfifo.empty() && lfifo.empty())
+        if (read_reader_exit && read_master_exit && rfifo.empty() && lfifo.empty()) // FIXME: do we need this?
             break;
 
         // reset struct pollfd
@@ -349,7 +340,6 @@ inline void poll_thread(void *data) {
                 read_reader_exit = true;
         }
 #endif
-        //printf("fifos: %d %d\n", lfifo.size(), rfifo.size());
 
         // exit on fd error: POLLERR, POLLNVAL
         if(fds[0].revents & POLLERR || fds[0].revents & POLLNVAL)
@@ -477,9 +467,6 @@ inline void poll_thread(void *data) {
                 }
             }
 
-            //printf("inner fifos: %d %d\n", lfifo.size(), rfifo.size());
-            //printf("mb-%d me-%d");
-
             // exit busy loop to reevaluate blocking channels in poll
             if (!repoll--)
                 break;
@@ -523,8 +510,8 @@ inline void after_poll_thread(uv_async_t *async) {
 }
 
 NAN_METHOD(get_io_channels) {
-    if (info.Length() != 1 || !info[0]->IsNumber()) // || !info[1]->IsBoolean())
-        return Nan::ThrowError("usage: pty.get_io_channels(fd, close_on_writer_exit)");
+    if (info.Length() != 1 || !info[0]->IsNumber())
+        return Nan::ThrowError("usage: pty.get_io_channels(fd)");
 
     Poll *poller = nullptr;
 
@@ -554,7 +541,6 @@ NAN_METHOD(get_io_channels) {
     poller->master = info[0]->IntegerValue();
     poller->read = pipes2[0];
     poller->write = pipes1[1];
-    //poller->close_on_write_exit = info[1]->BooleanValue();
     poller->async.data = poller;
 
     uv_async_init(uv_default_loop(), &poller->async, after_poll_thread);
