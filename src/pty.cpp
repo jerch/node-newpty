@@ -283,15 +283,17 @@ inline void poll_thread(void *data) {
     // poll loop
     for (;;) {
         //counter++;
-        // final exit condition: no more data can be written
+        // exit: no more data can be written
+        // NOTE: read_master_exit also covers write_master_exit
         if (write_writer_exit && read_master_exit)
             break;
 
         // exit: all slave hung up, master and fifo is drained
         if (read_master_exit && lfifo.empty())
             break;
-        // exit: input hung up, no data on master to read, all fifos drained
-        if (read_reader_exit && read_master_exit && rfifo.empty() && lfifo.empty()) // FIXME: do we need this?
+
+        // no js consumer anymore and rfifo empty, should we close master here?
+        if (read_reader_exit && rfifo.empty() && write_writer_exit)
             break;
 
         // reset struct pollfd
@@ -311,7 +313,9 @@ inline void poll_thread(void *data) {
         if (read_reader_exit)   // reader has died
             fds[2].fd = -1;
 
-        // query POLLOUT only if data needs to be written
+        // poll query
+        // POLLOUT only if data needs to be written
+        // POLLIN only if data can be stored
         fds[0].events = (rfifo.empty())
             ? (lfifo.full() ? 0 : POLLIN)
             : POLLOUT | (lfifo.full() ? 0 : POLLIN);
@@ -325,20 +329,28 @@ inline void poll_thread(void *data) {
         if (!result)
             continue;
 
+        // POLLHUP conditions
 #if defined(__linux__)
         // special case linux
-        // ignore POLLHUP until no more data can be read
+        // ignore POLLHUP until no more data can be read on master and reader
         if(fds[0].revents & POLLHUP) {
             write_master_exit = true;
-            if (!lfifo.full() && !(fds[0].revents & POLLIN))
+            if ((fds[0].events & POLLIN) && !(fds[0].revents & POLLIN))
                 read_master_exit = true;
         }
         if (fds[1].revents & POLLHUP)
             write_writer_exit = true;
         if(fds[2].revents & POLLHUP) {
-            if (!rfifo.full() && !(fds[2].revents & POLLIN))
+            if ((fds[2].events & POLLIN) && !(fds[2].revents & POLLIN))
                 read_reader_exit = true;
         }
+#else
+        if(fds[0].revents & POLLHUP)
+            write_master_exit = true;
+        if(fds[1].revents & POLLHUP)
+            write_writer_exit = true;
+        if(fds[2].revents & POLLHUP)
+            read_reader_exit = true;
 #endif
 
         // exit on fd error: POLLERR, POLLNVAL
@@ -358,14 +370,6 @@ inline void poll_thread(void *data) {
             write_writer_block = false;
         if (fds[2].revents & POLLIN)
             read_reader_block = false;
-
-        // special post poll exit conditions:
-        // exit once all slave hang up and the fifo got drained (linux only)
-        if (fds[0].revents & POLLHUP && !(fds[0].revents & POLLIN) && lfifo.empty())
-            break;
-        // no more data can be written to JS and fifo to master is empty
-        if (fds[1].revents & POLLHUP && rfifo.empty())
-            break;
 
         // set max inner loop runs before repolling
         int repoll = POLL_FIFOLENGTH * 2;

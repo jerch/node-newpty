@@ -460,7 +460,7 @@ describe('UnixTerminal', () => {
         });
     });
 */
-    describe('check for correct  input/output', function() {
+    describe('check for correct input/output', function() {
         it('test sentinel x50', function(done) {
             this.timeout(10000);
             // must run multiple times since it gets not truncated always
