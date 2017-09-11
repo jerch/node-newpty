@@ -20,4 +20,4 @@ if (child.stderr)
 
 //setTimeout(function(){ child.stdin.write('build/Release/stderr_tester\r'); }, 1000);
 //setTimeout(function(){ child.stdin.write('ls --foobar\r'); }, 2000);
-//setTimeout(function(){ child.stdin.write('exit\r'); }, 3000);
+setTimeout(function(){ child.stdin.write('exit\r'); }, 300);
