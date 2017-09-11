@@ -242,7 +242,7 @@ export class Pty extends RawPty implements I.IPty {
     }
     public init_master_streams(): void {
         this.close_master_streams();
-        this._fds = native.get_io_channels(this.master_fd, false);
+        this._fds = native.get_io_channels(this.master_fd);
         this.stdin = new Socket({fd: this._fds.write, readable: false, writable: true});
         this.stdin.on('close', (): void => {
             try { fs.closeSync(this._fds.write); } catch (e) {}

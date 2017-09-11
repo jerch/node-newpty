@@ -470,6 +470,7 @@ describe('UnixTerminal', () => {
                 //const term = new pty.UnixTerminal('bash', ['-c', 'ls -lR /usr/lib && echo -n "__sentinel__"'], {});
                 let buffer = '';
                 term.on('data', (data) => {
+                    //console.log(data);
                     buffer += data;
                 });
                 term.on('error', (err) => {
@@ -495,47 +496,35 @@ describe('UnixTerminal', () => {
 });
 
 describe('test data I/O', () => {
-    it('eval big stdin data', (done) => {
+    it('eval stdin data', (done) => {
         let tester: string = path.join(FIXTURES, 'test_input.js');
         let termios = new Termios(0);
-        // switch tty to raw mode, needed to avoid special control code handling
+        // switch tty to raw mode to avoid special control code handling
+        // and echoing in the pty
         termios.setraw();
         const child = pty.spawn('node', [tester], {stderr: true, termios: termios});
-        //const child = pty.spawn('wc', [], {stderr: true, termios: termios});
         child.on('exit', (code, signal) => {
-            // normal exit, no signal (SIGINT gets catched by handler)
-            console.log(code, signal);
-            //assert.equal(code, 0);
-            //assert.equal(signal, null);
+            assert.equal(code, 0);
+            assert.equal(signal, null);
         });
         // pump file data
         let filestream = fs.createReadStream(path.join(FIXTURES, 'random_data'));
-        filestream.pipe(child.stdin, {end: false});
-        filestream.on('close', () => {
-            child.stdin.end();
-            console.log('filestream done');
-            child.stdin.on('close', () => {
-                console.log('stdin done');
-                //child.pty.hangup();
-            });
+        filestream.pipe(child.stdin);
+        child.stdin.on('close', () => {
+            // FIXME: fifos in poll thread possibly not drained yet, delay for now
+            setTimeout(()=>{ child.pty.close(); }, 200);
         });
-        // should not error on slave side
-        child.stderr.on('data', (data) => {
-            assert.equal('should not have been called', data.toString());
-        });
+        // use stderr as comm channel after SIGHUP
         let buffer: string = '';
-        child.stdout.on('data', (data) => {
+        child.stderr.on('data', (data) => {
             buffer += data.toString();
         });
-        child.stdout.on('close', () => {
-            //assert.equal(buffer, 'true');
-            //done();
-        });
-        child.stderr.on('close', (data) => {
+        child.stderr.on('close', () => {
+            assert.equal(buffer, 'true');
             done();
         });
     });
-    it('eval big stdout data', (done) => {
+    it('eval stdout data', (done) => {
         let termios = new Termios(0);
         termios.setraw();
         const child = pty.spawn('cat', [path.join(FIXTURES, 'random_data')], {termios: termios});

@@ -284,14 +284,14 @@ inline void poll_thread(void *data) {
         {reader, POLLIN, 0}
     };
     int result;
-    int counter = 0;
-    std::clock_t start;
-    start = std::clock();
+    //int counter = 0;
+    //std::clock_t start;
+    //start = std::clock();
 
 
     // poll loop
     for (;;) {
-        counter++;
+        //counter++;
         // final exit condition: no more data can be written
         if (write_writer_exit && read_master_exit)
             break;
@@ -412,8 +412,7 @@ inline void poll_thread(void *data) {
             if (!write_writer_exit && !write_writer_block) {
                 entry = lfifo.getPopEntry();
                 if (entry) {
-                    TEMP_FAILURE_RETRY(w_bytes = write(writer, entry->data + entry->written,
-                                                       entry->length - entry->written));
+                    TEMP_FAILURE_RETRY(w_bytes = write(writer, entry->data + entry->written, entry->length));
                     if (w_bytes == -1) {
                         if (errno == EAGAIN) {
                             write_writer_block = true;
@@ -460,8 +459,7 @@ inline void poll_thread(void *data) {
             if (!write_master_exit && !write_master_block) {
                 entry = rfifo.getPopEntry();
                 if (entry) {
-                    TEMP_FAILURE_RETRY(w_bytes = write(master, entry->data + entry->written,
-                                                       entry->length - entry->written));
+                    TEMP_FAILURE_RETRY(w_bytes = write(master, entry->data + entry->written, entry->length));
                     if (w_bytes == -1) {
                         if (errno == EAGAIN) {
                             write_master_block = true;
@@ -500,9 +498,15 @@ inline void poll_thread(void *data) {
                 continue;
             break;
         }
+        //printf("mr %d mw %d rr %d ww %d\n", read_master_exit, write_master_exit, read_reader_exit, write_writer_exit);
+        //printf("mr %d mw %d rr %d ww %d\n", read_master_block, write_master_block, read_reader_block, write_writer_block);
+        //printf("fifos size: %d %d\n", lfifo.size(), rfifo.size());
+        //printf("fds %d %d %d\n", fds[0].fd, fds[1].fd, fds[2].fd);
+        //printf("events:  %d %d\n", fds[0].events % POLLIN, fds[0].events % POLLOUT);
+        //printf("revents: %d %d %d\n", fds[0].revents % POLLIN, fds[0].revents % POLLOUT, fds[0].revents % POLLHUP);
     }
-    printf("runs: %d %f ms\n", counter, (std::clock() - start) / (double)(CLOCKS_PER_SEC / 1000));
-    printf("fifos size: %d %d\n", lfifo.size(), rfifo.size());
+    //printf("runs: %d %f ms\n", counter, (std::clock() - start) / (double)(CLOCKS_PER_SEC / 1000));
+    //printf("fifos size: %d %d\n", lfifo.size(), rfifo.size());
     uv_async_send(&poller->async);
 }
 
@@ -515,11 +519,7 @@ inline void close_poll_thread(uv_handle_t *handle) {
 }
 
 inline void after_poll_thread(uv_async_t *async) {
-    Poll *poller = static_cast<Poll *>(async->data);
-    uv_thread_join(&poller->tid);
-    TEMP_FAILURE_RETRY(close(poller->write));
-    TEMP_FAILURE_RETRY(close(poller->read));
-    uv_close((uv_handle_t *) async, delete_poller);
+    uv_close((uv_handle_t *) async, close_poll_thread);
 }
 
 NAN_METHOD(get_io_channels) {
