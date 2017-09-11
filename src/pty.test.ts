@@ -511,7 +511,8 @@ describe('test data I/O', () => {
         filestream.pipe(child.stdin);
         child.stdin.on('close', () => {
             // FIXME: fifos in poll thread possibly not drained yet, delay for now
-            setTimeout(()=>{ child.pty.close(); }, 200);
+            // FIXME: calling socket.destroy in .close does a memory corruption on OSX!!!
+            //setTimeout(()=>{ child.pty.close(); }, 200);
         });
         // use stderr as comm channel after SIGHUP
         let buffer: string = '';
