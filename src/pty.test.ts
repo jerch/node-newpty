@@ -495,7 +495,8 @@ describe('UnixTerminal', () => {
 });
 
 describe('test data I/O', () => {
-    it('eval stdin data', (done) => {
+    /* deactivated for now
+    it('eval stdin data', function(done) {
         let tester: string = path.join(FIXTURES, 'test_input.js');
         let termios = new Termios(0);
         // switch tty to raw mode to avoid special control code handling
@@ -523,8 +524,8 @@ describe('test data I/O', () => {
             assert.equal(buffer, 'true');
             done();
         });
-    });
-    it('eval stdout data', (done) => {
+    });*/
+    it('eval stdout data', function(done) {
         let termios = new Termios(0);
         termios.setraw();
         const child = pty.spawn('cat', [path.join(FIXTURES, 'random_data')], {termios: termios});
