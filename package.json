@@ -2,7 +2,7 @@
   "name": "node-newpty",
   "version": "0.0.1",
   "description": "",
-  "main": "index.js",
+  "main": "./lib/pty.js",
   "scripts": {
     "tsc": "tsc",
     "tslint": "tslint src/**/*.ts",
