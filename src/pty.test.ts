@@ -495,7 +495,7 @@ describe('UnixTerminal', () => {
 });
 
 describe('test data I/O', () => {
-    /* deactivated for now
+    /* deactivated for now --> does not work on OSX causing memory corruption, no clue why
     it('eval stdin data', function(done) {
         let tester: string = path.join(FIXTURES, 'test_input.js');
         let termios = new Termios(0);
