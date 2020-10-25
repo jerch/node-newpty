@@ -9,7 +9,8 @@
     "test": "mocha lib/*.test.js",
     "prepublish": "npm run tsc",
     "watch": "tsc -b -w --preserveWatchOutput",
-    "build": "node-gyp rebuild"
+    "build": "node-gyp rebuild",
+    "prepare": "npm run tsc"
   },
   "author": "Joerg Breitbart <j.breitbart@netzkolchose.de>",
   "license": "MIT",
