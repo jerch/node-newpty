@@ -2,7 +2,7 @@ import * as I from './interfaces';
 import * as fs from 'fs';
 import * as path from 'path';
 import {Socket} from 'net';
-import {ITermios, Termios, native as termiosNative} from 'node-termios';
+import {Termios, native as termiosNative} from 'node-termios';
 import {EventEmitter} from 'events';
 import * as cp from 'child_process';
 import * as tty from 'tty';
@@ -12,7 +12,7 @@ const ReadStream = require('tty').ReadStream;
 const s = termiosNative.ALL_SYMBOLS;
 
 // native module
-export const native: I.Native = require(path.join('..', 'build', 'Release', 'pty.node'));
+export const native: I.INative = require(path.join('..', 'build', 'Release', 'pty.node'));
 
 // default terminal size
 export const DEFAULT_COLS: number = 80;
@@ -28,7 +28,7 @@ export const STDERR_TESTER: string = path.join(__dirname, '..', 'build', 'Releas
  * @param opts
  * @return {{master: number, slave: number, slavepath: string}}
  */
-export function openpty(opts?: I.OpenPtyOptions): I.NativePty {
+export function openpty(opts?: I.OpenPtyOptions): I.INativePty {
     // get a pty master
     let master = native.openpt(native.FD_FLAGS.O_RDWR | native.FD_FLAGS.O_NOCTTY);
 
@@ -48,9 +48,9 @@ export function openpty(opts?: I.OpenPtyOptions): I.NativePty {
     // apply size settings
     let cols: number = (opts && opts.size) ? opts.size.cols || DEFAULT_COLS : DEFAULT_COLS;
     let rows: number = (opts && opts.size) ? opts.size.rows || DEFAULT_ROWS : DEFAULT_ROWS;
-    native.set_size(master, cols, rows);
+    native.set_size(master, cols, rows, 0, 0); // pixels not handled here
 
-    return {master: master, slave: slave, slavepath: slavepath};
+    return {master: master, slave: slave, name: slavepath};
 }
 
 
@@ -80,9 +80,9 @@ export function openpty(opts?: I.OpenPtyOptions): I.NativePty {
  * on the values without keeping the slave end open on Solaris.
  */
 export class RawPty implements I.IRawPty {
-    private _nativePty: I.NativePty;
-    private _size: I.Size;
-    private _termios: ITermios;
+    private _nativePty: I.INativePty;
+    private _size: I.IWinSize;
+    private _termios: Termios;
     private _is_usable(): void {
         if (this._nativePty.master === -1)
             throw new Error('pty is destroyed');
@@ -92,7 +92,7 @@ export class RawPty implements I.IRawPty {
         if (process.platform === 'sunos') {
             native.load_driver(this._nativePty.slave);
             this._termios.writeTo(this._nativePty.slave);
-            native.set_size(this._nativePty.slave, this._size.cols, this._size.rows);
+            native.set_size(this._nativePty.slave, this._size.cols, this._size.rows, 0, 0);
         }
     }
     constructor(options?: I.RawPtyOptions) {
@@ -112,7 +112,7 @@ export class RawPty implements I.IRawPty {
     }
     public get slavepath(): string {
         this._is_usable();
-        return this._nativePty.slavepath;
+        return this._nativePty.name;
     }
     public close(): void {
         this._is_usable();
@@ -122,12 +122,12 @@ export class RawPty implements I.IRawPty {
             try { fs.closeSync(this._nativePty.slave); } catch (e) {}
         this._nativePty.master = -1;
         this._nativePty.slave = -1;
-        this._nativePty.slavepath = '';
+        this._nativePty.name = '';
     }
     public open_slave(): number {
         this._is_usable();
         if (this._nativePty.slave === -1) {
-            this._nativePty.slave = fs.openSync(this._nativePty.slavepath,
+            this._nativePty.slave = fs.openSync(this._nativePty.name,
                 native.FD_FLAGS.O_RDWR | native.FD_FLAGS.O_NOCTTY);
             this._prepare_slave(this._nativePty.slave);
         }
@@ -140,13 +140,13 @@ export class RawPty implements I.IRawPty {
         }
         this._nativePty.slave = -1;
     }
-    public get_size(): I.Size {
+    public get_size(): I.IWinSize {
         this._is_usable();
         if (process.platform === 'sunos')
             return this._size;
         return native.get_size(this._nativePty.master);
     }
-    public set_size(cols: number, rows: number): I.Size {
+    public set_size(cols: number, rows: number): I.IWinSize {
         this._is_usable();
         if (cols < 1 || rows < 1)
             throw new Error('cols/rows must be greater 0');
@@ -154,13 +154,13 @@ export class RawPty implements I.IRawPty {
             let no_slave: boolean = (this._nativePty.slave === -1);
             if (no_slave)
                 this.open_slave();
-            let size: I.Size = native.set_size(this._nativePty.slave, cols, rows);
+            let size: I.IWinSize = native.set_size(this._nativePty.slave, cols, rows, 0, 0);
             this._size = {cols: cols, rows: rows};
             if (no_slave)
                 this.close_slave();
             return size;
         }
-        return native.set_size(this._nativePty.master, cols, rows);
+        return native.set_size(this._nativePty.master, cols, rows, 0, 0);
     }
     public resize(cols: number, rows: number): void {
         this._is_usable();
@@ -182,7 +182,7 @@ export class RawPty implements I.IRawPty {
         this._is_usable();
         this.resize(this.get_size().cols, rows);
     }
-    public get_termios(): ITermios {
+    public get_termios(): Termios {
         this._is_usable();
         // should always work on slave end
         if (this._nativePty.slave !== -1)
@@ -192,7 +192,7 @@ export class RawPty implements I.IRawPty {
         // fall through to master end (not working on solaris)
         return new Termios(this._nativePty.master);
     }
-    public set_termios(termios: ITermios, action?: number): void {
+    public set_termios(termios: Termios, action?: number): void {
         this._is_usable();
         // should always work on slave end
         if (this._nativePty.slave !== -1) {
@@ -275,7 +275,7 @@ export class Pty extends RawPty implements I.IPty {
         if (this.slave_fd === -1)
             this.open_slave();
         this.slave = new ReadStream(this.slave_fd);
-        this.slave.writable = true;
+        (this.slave.writable as any) = true;
     }
     public close_slave_stream(): void {
         if (this.slave) {
@@ -377,9 +377,9 @@ export class UnixTerminal implements I.ITerminal {
         delete env['COLUMNS'];
         delete env['LINES'];
     }
-    private static _getTermios(encoding: string): ITermios {
+    private static _getTermios(encoding: string): Termios {
         // termios settings taken from node-pty's pty.cc
-        let termios: ITermios = new Termios();
+        let termios = new Termios();
         termios.c_iflag = s.ICRNL | s.IXON | s.IXANY | s.IMAXBEL | s.BRKINT;
         if (encoding === 'utf8' && s.IUTF8)
             termios.c_iflag |= s.IUTF8;
@@ -471,7 +471,7 @@ export class UnixTerminal implements I.ITerminal {
         this._process.kill('SIGHUP');
     }
     public kill(signal?: string): void {
-        this._process.kill(signal);
+        this._process.kill(signal as any);
     }
     public setEncoding(encoding: string): void {
         if ((this._process.stdout as any)._decoder)

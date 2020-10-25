@@ -68,7 +68,7 @@ inline int cloexec(int fd) {
 NAN_METHOD(js_posix_openpt) {
     if (info.Length() != 1 || !(info[0]->IsNumber()))
         return Nan::ThrowError("usage: posix_openpt(flags)");
-    int fd = posix_openpt(info[0]->IntegerValue());
+    int fd = posix_openpt(info[0]->Int32Value(Nan::GetCurrentContext()).ToChecked());
     if (fd < 0) {
         std::string error(strerror(errno));
         return Nan::ThrowError((std::string("posix_openpt failed - ") + error).c_str());
@@ -82,7 +82,7 @@ NAN_METHOD(js_grantpt) {
     if (info.Length() != 1 || !(info[0]->IsNumber()))
         return Nan::ThrowError("usage: grantpt(fd)");
     // TODO: disable SIGCHLD
-    if (grantpt(info[0]->IntegerValue())) {
+    if (grantpt(info[0]->Int32Value(Nan::GetCurrentContext()).ToChecked())) {
         std::string error(strerror(errno));
         return Nan::ThrowError((std::string("grantpt failed - ") + error).c_str());
     }
@@ -92,7 +92,7 @@ NAN_METHOD(js_grantpt) {
 NAN_METHOD(js_unlockpt) {
     if (info.Length() != 1 || !(info[0]->IsNumber()))
         return Nan::ThrowError("usage: grantpt(fd)");
-    if (unlockpt(info[0]->IntegerValue())) {
+    if (unlockpt(info[0]->Int32Value(Nan::GetCurrentContext()).ToChecked())) {
         std::string error(strerror(errno));
         return Nan::ThrowError((std::string("unlockpt failed - ") + error).c_str());
     }
@@ -102,7 +102,7 @@ NAN_METHOD(js_unlockpt) {
 NAN_METHOD(js_ptsname) {
     if (info.Length() != 1 || !(info[0]->IsNumber()))
         return Nan::ThrowError("usage: ptsname(fd)");
-    char *slavename = ptsname(info[0]->IntegerValue());
+    char *slavename = ptsname(info[0]->Int32Value(Nan::GetCurrentContext()).ToChecked());
     if (!slavename) {
         std::string error(strerror(errno));
         return Nan::ThrowError((std::string("ptsname failed - ") + error).c_str());
@@ -115,7 +115,7 @@ NAN_METHOD(js_pty_get_size) {
         return Nan::ThrowError("usage: pty.get_size(fd)");
 
     struct winsize winp = winsize();
-    int res = ioctl(info[0]->IntegerValue(), TIOCGWINSZ, &winp);
+    int res = ioctl(info[0]->Int32Value(Nan::GetCurrentContext()).ToChecked(), TIOCGWINSZ, &winp);
     if (res == -1) {
         std::string error(strerror(errno));
         return Nan::ThrowError((std::string("get_size failed - ") + error).c_str());
@@ -123,20 +123,26 @@ NAN_METHOD(js_pty_get_size) {
     Local<Object> obj = Nan::New<Object>();
     SET(obj, "cols", Nan::New<Number>(winp.ws_col));
     SET(obj, "rows", Nan::New<Number>(winp.ws_row));
+    SET(obj, "xpixel", Nan::New<Number>(winp.ws_xpixel));
+    SET(obj, "ypixel", Nan::New<Number>(winp.ws_ypixel));
     info.GetReturnValue().Set(obj);
 }
 
 NAN_METHOD(js_pty_set_size) {
-    if (info.Length() != 3
+    if (info.Length() != 5
             || !info[0]->IsNumber()
             || !info[1]->IsNumber()
-            || !info[2]->IsNumber())
+            || !info[2]->IsNumber()
+            || !info[3]->IsNumber()
+            || !info[4]->IsNumber())
         return Nan::ThrowError("usage: pty.set_size(fd, columns, rows)");
 
     struct winsize winp = winsize();
-    winp.ws_col = info[1]->IntegerValue();
-    winp.ws_row =  info[2]->IntegerValue();
-    int res = ioctl(info[0]->IntegerValue(), TIOCSWINSZ, &winp);
+    winp.ws_col = info[1]->Int32Value(Nan::GetCurrentContext()).ToChecked();
+    winp.ws_row =  info[2]->Int32Value(Nan::GetCurrentContext()).ToChecked();
+    winp.ws_xpixel = info[3]->Int32Value(Nan::GetCurrentContext()).ToChecked();
+    winp.ws_ypixel = info[4]->Int32Value(Nan::GetCurrentContext()).ToChecked();
+    int res = ioctl(info[0]->Int32Value(Nan::GetCurrentContext()).ToChecked(), TIOCSWINSZ, &winp);
     if (res == -1) {
         std::string error(strerror(errno));
         return Nan::ThrowError((std::string("set_size failed - ") + error).c_str());
@@ -144,6 +150,8 @@ NAN_METHOD(js_pty_set_size) {
     Local<Object> obj = Nan::New<Object>();
     SET(obj, "cols", Nan::New<Number>(winp.ws_col));
     SET(obj, "rows", Nan::New<Number>(winp.ws_row));
+    SET(obj, "xpixel", Nan::New<Number>(winp.ws_xpixel));
+    SET(obj, "ypixel", Nan::New<Number>(winp.ws_ypixel));
     info.GetReturnValue().Set(obj);
 }
 
@@ -546,7 +554,7 @@ NAN_METHOD(get_io_channels) {
 
     // setup polling thread
     poller = new Poll();
-    poller->master = info[0]->IntegerValue();
+    poller->master = info[0]->Int32Value(Nan::GetCurrentContext()).ToChecked();
     poller->read = pipes2[0];
     poller->write = pipes1[1];
     poller->lfifo = new Fifo(POLL_FIFOLENGTH, POLL_BUFSIZE);   // master --> writer
@@ -567,7 +575,7 @@ NAN_METHOD(load_driver) {
 #ifdef SOLARIS
     if (info.Length() != 1 || !info[0]->IsNumber())
         return Nan::ThrowError("usage: pty.load_driver(fd)");
-    int slave = info[0]->IntegerValue();
+    int slave = info[0]->Int32Value(Nan::GetCurrentContext()).ToChecked();
     int setup;
     // check first if modules were autoloaded
     if ((setup = ioctl(slave, I_FIND, "ldterm")) < 0) {

@@ -5,7 +5,7 @@ import * as assert from 'assert';
 import * as fs from 'fs';
 import * as pty from './pty';
 import * as Interfaces from './interfaces';
-import {Termios, ITermios} from 'node-termios';
+import {Termios} from 'node-termios';
 
 describe('native functions', () => {
     it('ptname/grantpt/unlockpt + open slave', () => {
@@ -44,9 +44,9 @@ describe('native functions', () => {
             // solaris needs this, empty call for others
             pty.native.load_driver(slave);
         });
-        let size: Interfaces.Size = {cols: -1, rows: -1};
+        let size: Interfaces.IWinSize = {cols: -1, rows: -1};
         assert.doesNotThrow(() => {
-            size = pty.native.set_size(master, 12, 13);
+            size = pty.native.set_size(master, 12, 13, 0, 0);
         });
         assert.equal(size.cols, 12);
         assert.equal(size.rows, 13);
@@ -59,7 +59,7 @@ describe('native functions', () => {
         if (process.platform !== 'sunos') {
             size = {cols: -1, rows: -1};
             assert.doesNotThrow(() => {
-                size = pty.native.set_size(slave, 23, 24);
+                size = pty.native.set_size(slave, 23, 24, 0, 0);
             });
             assert.equal(size.cols, 23);
             assert.equal(size.rows, 24);
@@ -83,11 +83,11 @@ describe('native functions', () => {
             slave = fs.openSync(pty.native.ptsname(master), pty.native.FD_FLAGS.O_RDWR | pty.native.FD_FLAGS.O_NOCTTY);
             // solaris needs this, empty call for others
             pty.native.load_driver(slave);
-            pty.native.set_size(master, 12, 13);
+            pty.native.set_size(master, 12, 13, 0, 0);
         });
-        let size_master: Interfaces.Size = {cols: -1, rows: -1};
-        let size_slave: Interfaces.Size = {cols: -1, rows: -1};
-        let size: Interfaces.Size = {cols: 12, rows: 13};
+        let size_master: Interfaces.IWinSize = {cols: -1, rows: -1};
+        let size_slave: Interfaces.IWinSize = {cols: -1, rows: -1};
+        let size: Interfaces.IWinSize = {cols: 12, rows: 13, xpixel: 0, ypixel: 0};
         assert.doesNotThrow(() => {
             size_master = pty.native.get_size(master);
         });
@@ -142,40 +142,40 @@ describe('class RawPty', () => {
     });
     it('get_size, cols/rows getter', () => {
         let rawPty: pty.RawPty = new pty.RawPty();
-        let size1: Interfaces.Size = rawPty.get_size();
-        assert.deepEqual(size1, {cols: pty.DEFAULT_COLS, rows: pty.DEFAULT_ROWS});
+        let size1: Interfaces.IWinSize = rawPty.get_size();
+        assert.deepEqual(size1, {cols: pty.DEFAULT_COLS, rows: pty.DEFAULT_ROWS, xpixel: 0, ypixel: 0});
         rawPty.close();
         rawPty = new pty.RawPty({size: {cols: 50, rows: 100}});
         size1 = rawPty.get_size();
-        assert.deepEqual(size1, {cols: 50, rows: 100});
+        assert.deepEqual(size1, {cols: 50, rows: 100, xpixel: 0, ypixel: 0});
         // size should not interfere with slave state
         rawPty.close_slave();
-        let size2: Interfaces.Size = rawPty.get_size();
-        assert.deepEqual(size1, size2);
+        let size2: Interfaces.IWinSize = rawPty.get_size();
+        assert.deepEqual({...size1, xpixel: 0, ypixel: 0}, size2);
         assert.equal(rawPty.columns, size1.cols);
         assert.equal(rawPty.rows, size1.rows);
         rawPty.close();
     });
     it('set_size, resize, cols/rows getter and setter', () => {
         let rawPty: pty.RawPty = new pty.RawPty();
-        let size1: Interfaces.Size = rawPty.set_size(100, 200);
-        assert.deepEqual(size1, {cols: 100, rows: 200});
+        let size1: Interfaces.IWinSize = rawPty.set_size(100, 200);
+        assert.deepEqual(size1, {cols: 100, rows: 200, xpixel: 0, ypixel: 0});
         // size should not interfere with slave state
         rawPty.close_slave();
         // set --> get should be equal
-        let size2: Interfaces.Size = rawPty.set_size(200, 400);
-        assert.deepEqual(size2, {cols: 200, rows: 400});
+        let size2: Interfaces.IWinSize = rawPty.set_size(200, 400);
+        assert.deepEqual(size2, {cols: 200, rows: 400, xpixel: 0, ypixel: 0});
         assert.deepEqual(size2, rawPty.get_size());
         // resize --> get should be equal
         rawPty.resize(400, 200);
-        assert.deepEqual({cols: 400, rows: 200}, rawPty.get_size());
+        assert.deepEqual({cols: 400, rows: 200, xpixel: 0, ypixel: 0}, rawPty.get_size());
         // getter
         assert.equal(rawPty.columns, 400);
         assert.equal(rawPty.rows, 200);
         // setter
         rawPty.columns = 800;
         rawPty.rows = 400;
-        assert.deepEqual(rawPty.get_size(), {cols: 800, rows: 400});
+        assert.deepEqual(rawPty.get_size(), {cols: 800, rows: 400, xpixel: 0, ypixel: 0});
         // do not allow insane values
         assert.throws(() => { rawPty.resize(-1, 50); });
         assert.throws(() => { rawPty.resize(50, -1); });
@@ -186,7 +186,7 @@ describe('class RawPty', () => {
     it('get/set termios', () => {
         // load termios from stdin
         let rawPty: pty.RawPty = new pty.RawPty({termios: new Termios(0)});
-        let termios: ITermios = rawPty.get_termios();
+        let termios = rawPty.get_termios();
         assert.deepEqual(termios, new Termios(0));
         // termios should not interfere with slave state (reopens slave on solaris)
         rawPty.close_slave();
@@ -356,7 +356,6 @@ describe('spawn', () => {
 });
 
 import { UnixTerminal } from './pty';
-import pollUntil = require('pollUntil');
 import * as path from 'path';
 const FIXTURES_PATH = path.normalize(path.join(__dirname, '..', 'fixtures', 'utf8-character.txt'));
 const FIXTURES = path.normalize(path.join(__dirname, '..', 'fixtures'));

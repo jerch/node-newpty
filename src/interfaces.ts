@@ -1,6 +1,6 @@
 import {Socket} from 'net';
 import * as cp from 'child_process';
-import {ITermios} from 'node-termios';
+import {Termios} from 'node-termios';
 import {ReadStream} from 'tty';
 
 
@@ -19,9 +19,11 @@ export interface FdFlags {
 /**
  * terminal size
  */
-export interface Size {
-    cols?: number;
-    rows?: number;
+export interface IWinSize {
+    cols: number;
+    rows: number;
+    xpixel?: number;
+    ypixel?: number;
 }
 
 
@@ -37,13 +39,13 @@ export interface PtyFileDescriptors {
 /**
  * native exports
  */
-export interface Native {
+export interface INative {
     openpt(options: number): number;
     grantpt(fd: number): void;
     unlockpt(fd: number): void;
     ptsname(fd: number): string;
-    get_size(fd: number): Size;
-    set_size(fd: number, cols: number, rows: number): Size;
+    get_size(fd: number): IWinSize;
+    set_size(fd: number, cols: number, rows: number, xpixel: number, ypixel: number): IWinSize;
     get_io_channels(fd: number): PtyFileDescriptors;
     load_driver(fd: number): void;
     FD_FLAGS: FdFlags;
@@ -53,10 +55,10 @@ export interface Native {
 /**
  * low level pty data as returned by openpty
  */
-export interface NativePty {
+export interface INativePty {
     master: number;
     slave: number;
-    slavepath: string;
+    name: string;
 }
 
 
@@ -73,8 +75,8 @@ export interface  PtyChannels {
  * options for openpty and RawPty()
  */
 export interface OpenPtyOptions {
-    termios?: ITermios;
-    size?: Size;
+    termios?: Termios;
+    size?: IWinSize;
 }
 export type RawPtyOptions = OpenPtyOptions;
 
@@ -129,12 +131,12 @@ export interface IRawPty {
     /**
      * get the size settings of the pty
      */
-    get_size(): Size;
+    get_size(): IWinSize;
 
     /**
      * set the of the pty and return new size settings
      */
-    set_size(cols: number, rows: number): Size;
+    set_size(cols: number, rows: number): IWinSize;
 
     /**
      * set the of the pty
@@ -154,14 +156,14 @@ export interface IRawPty {
     /**
      * get the termios settings of the pty
      */
-    get_termios(): ITermios;
+    get_termios(): Termios;
 
     /**
      * set the termios settings of the pty
      * @param termios
      * @param action
      */
-    set_termios(termios: ITermios, action?: number): void;
+    set_termios(termios: Termios, action?: number): void;
 }
 
 
@@ -220,12 +222,12 @@ export interface PtySpawnOptions extends cp.SpawnOptions {
     /**
      * termios settings applied to the pty device
      */
-    termios?: ITermios;
+    termios?: Termios;
 
     /**
      * size settings applied to the new pty device
      */
-    size?: Size;
+    size?: IWinSize;
 
     /**
      * additional stderr pipe
