@@ -473,14 +473,14 @@ export class UnixTerminal implements I.ITerminal {
     public kill(signal?: string): void {
         this._process.kill(signal as any);
     }
-    public setEncoding(encoding: string): void {
+    public setEncoding(encoding: BufferEncoding): void {
         if ((this._process.stdout as any)._decoder)
             delete (this._process.stdout as any)._decoder;
         if (encoding) {
             this._process.stdout.setEncoding(encoding);
         }
     }
-    public end(data: string, encoding?: string): void{
+    public end(data: string, encoding?: BufferEncoding): void{
         this._process.stdin.end(data, encoding);
     }
     public pipe(dest: any, options: any): any {

@@ -30,7 +30,7 @@
 
 // macro for object attributes
 #define SET(obj, name, symbol)                                                \
-obj->Set(Nan::New<String>(name).ToLocalChecked(), symbol)
+Nan::Set(obj, Nan::New<String>(name).ToLocalChecked(), symbol)
 
 #ifndef TEMP_FAILURE_RETRY
 #define TEMP_FAILURE_RETRY(exp)            \
@@ -603,14 +603,14 @@ NAN_METHOD(load_driver) {
  * Exported symbols by the module
  */
 NAN_MODULE_INIT(init) {
-    SET(target, "openpt", Nan::New<FunctionTemplate>(js_posix_openpt)->GetFunction());
-    SET(target, "grantpt", Nan::New<FunctionTemplate>(js_grantpt)->GetFunction());
-    SET(target, "unlockpt", Nan::New<FunctionTemplate>(js_unlockpt)->GetFunction());
-    SET(target, "ptsname", Nan::New<FunctionTemplate>(js_ptsname)->GetFunction());
-    SET(target, "get_size", Nan::New<FunctionTemplate>(js_pty_get_size)->GetFunction());
-    SET(target, "set_size", Nan::New<FunctionTemplate>(js_pty_set_size)->GetFunction());
-    SET(target, "get_io_channels", Nan::New<FunctionTemplate>(get_io_channels)->GetFunction());
-    SET(target, "load_driver", Nan::New<FunctionTemplate>(load_driver)->GetFunction());
+    SET(target, "openpt", Nan::GetFunction(Nan::New<FunctionTemplate>(js_posix_openpt)).ToLocalChecked());
+    SET(target, "grantpt", Nan::GetFunction(Nan::New<FunctionTemplate>(js_grantpt)).ToLocalChecked());
+    SET(target, "unlockpt", Nan::GetFunction(Nan::New<FunctionTemplate>(js_unlockpt)).ToLocalChecked());
+    SET(target, "ptsname", Nan::GetFunction(Nan::New<FunctionTemplate>(js_ptsname)).ToLocalChecked());
+    SET(target, "get_size", Nan::GetFunction(Nan::New<FunctionTemplate>(js_pty_get_size)).ToLocalChecked());
+    SET(target, "set_size", Nan::GetFunction(Nan::New<FunctionTemplate>(js_pty_set_size)).ToLocalChecked());
+    SET(target, "get_io_channels", Nan::GetFunction(Nan::New<FunctionTemplate>(get_io_channels)).ToLocalChecked());
+    SET(target, "load_driver", Nan::GetFunction(Nan::New<FunctionTemplate>(load_driver)).ToLocalChecked());
 
     // needed fd flags
     Local<Object> fdflags = Nan::New<Object>();

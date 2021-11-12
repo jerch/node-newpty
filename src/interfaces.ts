@@ -256,7 +256,7 @@ export interface IPtyForkOptions {
   env?: NodeJS.ProcessEnv;
   uid?: number;
   gid?: number;
-  encoding?: string;
+  encoding?: BufferEncoding;
 }
 
 // old node-pty interface

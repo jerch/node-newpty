@@ -15,17 +15,17 @@ describe('native functions', () => {
             pty.native.grantpt(master);
             pty.native.unlockpt(master);
         });
-        assert.equal(true, master > 0);
+        assert.strictEqual(true, master > 0);
         let slavepath: string = '';
         assert.doesNotThrow(() => {
             slavepath = pty.native.ptsname(master);
         });
-        assert.notEqual('', slavepath);
+        assert.notStrictEqual('', slavepath);
         let slave: number = -1;
         assert.doesNotThrow(() => {
             slave = fs.openSync(slavepath, pty.native.FD_FLAGS.O_RDWR | pty.native.FD_FLAGS.O_NOCTTY);
         });
-        assert.notEqual(-1, slave);
+        assert.notStrictEqual(-1, slave);
         fs.closeSync(master);
         fs.closeSync(slave);
     });
@@ -48,26 +48,26 @@ describe('native functions', () => {
         assert.doesNotThrow(() => {
             size = pty.native.set_size(master, 12, 13, 0, 0);
         });
-        assert.equal(size.cols, 12);
-        assert.equal(size.rows, 13);
+        assert.strictEqual(size.cols, 12);
+        assert.strictEqual(size.rows, 13);
         size = {cols: -1, rows: -1};
         assert.doesNotThrow(() => {
             size = pty.native.get_size(master);
         });
-        assert.equal(size.cols, 12);
-        assert.equal(size.rows, 13);
+        assert.strictEqual(size.cols, 12);
+        assert.strictEqual(size.rows, 13);
         if (process.platform !== 'sunos') {
             size = {cols: -1, rows: -1};
             assert.doesNotThrow(() => {
                 size = pty.native.set_size(slave, 23, 24, 0, 0);
             });
-            assert.equal(size.cols, 23);
-            assert.equal(size.rows, 24);
+            assert.strictEqual(size.cols, 23);
+            assert.strictEqual(size.rows, 24);
             assert.doesNotThrow(() => {
                 size = pty.native.get_size(slave);
             });
-            assert.equal(size.cols, 23);
-            assert.equal(size.rows, 24);
+            assert.strictEqual(size.cols, 23);
+            assert.strictEqual(size.rows, 24);
         }
         fs.closeSync(master);
         fs.closeSync(slave);
@@ -91,12 +91,12 @@ describe('native functions', () => {
         assert.doesNotThrow(() => {
             size_master = pty.native.get_size(master);
         });
-        assert.deepEqual(size_master, size);
+        assert.deepStrictEqual(size_master, size);
         if (process.platform !== 'sunos') {
             assert.doesNotThrow(() => {
                 size_slave = pty.native.get_size(slave);
             });
-            assert.deepEqual(size_slave, size);
+            assert.deepStrictEqual(size_slave, size);
         }
         fs.closeSync(master);
         fs.closeSync(slave);
@@ -105,9 +105,9 @@ describe('native functions', () => {
 describe('class RawPty', () => {
     it('primitive getter', () => {
         let rawPty: pty.RawPty = new pty.RawPty();
-        assert.notEqual(rawPty.master_fd, -1);
-        assert.notEqual(rawPty.slave_fd, -1);
-        assert.notEqual(rawPty.slavepath, '');
+        assert.notStrictEqual(rawPty.master_fd, -1);
+        assert.notStrictEqual(rawPty.slave_fd, -1);
+        assert.notStrictEqual(rawPty.slavepath, '');
         rawPty.close();
     });
     it('close', () => {
@@ -130,52 +130,52 @@ describe('class RawPty', () => {
     it('open/close slave', () => {
         let rawPty: pty.RawPty = new pty.RawPty();
         // after open a slave should be available
-        assert.notEqual(rawPty.open_slave(), -1);
+        assert.notStrictEqual(rawPty.open_slave(), -1);
         // consecutive open calls should not open different fds
-        assert.equal(rawPty.open_slave(), rawPty.open_slave());
+        assert.strictEqual(rawPty.open_slave(), rawPty.open_slave());
         rawPty.close_slave();
         // no slave open
-        assert.equal(rawPty.slave_fd, -1);
+        assert.strictEqual(rawPty.slave_fd, -1);
         // new slave opened
-        assert.notEqual(rawPty.open_slave(), -1);
+        assert.notStrictEqual(rawPty.open_slave(), -1);
         rawPty.close();
     });
     it('get_size, cols/rows getter', () => {
         let rawPty: pty.RawPty = new pty.RawPty();
         let size1: Interfaces.IWinSize = rawPty.get_size();
-        assert.deepEqual(size1, {cols: pty.DEFAULT_COLS, rows: pty.DEFAULT_ROWS, xpixel: 0, ypixel: 0});
+        assert.deepStrictEqual(size1, {cols: pty.DEFAULT_COLS, rows: pty.DEFAULT_ROWS, xpixel: 0, ypixel: 0});
         rawPty.close();
         rawPty = new pty.RawPty({size: {cols: 50, rows: 100}});
         size1 = rawPty.get_size();
-        assert.deepEqual(size1, {cols: 50, rows: 100, xpixel: 0, ypixel: 0});
+        assert.deepStrictEqual(size1, {cols: 50, rows: 100, xpixel: 0, ypixel: 0});
         // size should not interfere with slave state
         rawPty.close_slave();
         let size2: Interfaces.IWinSize = rawPty.get_size();
-        assert.deepEqual({...size1, xpixel: 0, ypixel: 0}, size2);
-        assert.equal(rawPty.columns, size1.cols);
-        assert.equal(rawPty.rows, size1.rows);
+        assert.deepStrictEqual({...size1, xpixel: 0, ypixel: 0}, size2);
+        assert.strictEqual(rawPty.columns, size1.cols);
+        assert.strictEqual(rawPty.rows, size1.rows);
         rawPty.close();
     });
     it('set_size, resize, cols/rows getter and setter', () => {
         let rawPty: pty.RawPty = new pty.RawPty();
         let size1: Interfaces.IWinSize = rawPty.set_size(100, 200);
-        assert.deepEqual(size1, {cols: 100, rows: 200, xpixel: 0, ypixel: 0});
+        assert.deepStrictEqual(size1, {cols: 100, rows: 200, xpixel: 0, ypixel: 0});
         // size should not interfere with slave state
         rawPty.close_slave();
         // set --> get should be equal
         let size2: Interfaces.IWinSize = rawPty.set_size(200, 400);
-        assert.deepEqual(size2, {cols: 200, rows: 400, xpixel: 0, ypixel: 0});
-        assert.deepEqual(size2, rawPty.get_size());
+        assert.deepStrictEqual(size2, {cols: 200, rows: 400, xpixel: 0, ypixel: 0});
+        assert.deepStrictEqual(size2, rawPty.get_size());
         // resize --> get should be equal
         rawPty.resize(400, 200);
-        assert.deepEqual({cols: 400, rows: 200, xpixel: 0, ypixel: 0}, rawPty.get_size());
+        assert.deepStrictEqual({cols: 400, rows: 200, xpixel: 0, ypixel: 0}, rawPty.get_size());
         // getter
-        assert.equal(rawPty.columns, 400);
-        assert.equal(rawPty.rows, 200);
+        assert.strictEqual(rawPty.columns, 400);
+        assert.strictEqual(rawPty.rows, 200);
         // setter
         rawPty.columns = 800;
         rawPty.rows = 400;
-        assert.deepEqual(rawPty.get_size(), {cols: 800, rows: 400, xpixel: 0, ypixel: 0});
+        assert.deepStrictEqual(rawPty.get_size(), {cols: 800, rows: 400, xpixel: 0, ypixel: 0});
         // do not allow insane values
         assert.throws(() => { rawPty.resize(-1, 50); });
         assert.throws(() => { rawPty.resize(50, -1); });
@@ -187,21 +187,21 @@ describe('class RawPty', () => {
         // load termios from stdin
         let rawPty: pty.RawPty = new pty.RawPty({termios: new Termios(0)});
         let termios = rawPty.get_termios();
-        assert.deepEqual(termios, new Termios(0));
+        assert.deepStrictEqual(termios, new Termios(0));
         // termios should not interfere with slave state (reopens slave on solaris)
         rawPty.close_slave();
-        assert.deepEqual(termios, rawPty.get_termios());
+        assert.deepStrictEqual(termios, rawPty.get_termios());
         // set termios
         termios.c_iflag = 0;
         rawPty.set_termios(termios);
-        assert.deepEqual(termios, rawPty.get_termios());
-        assert.notDeepEqual(termios, new Termios(0));
+        assert.deepStrictEqual(termios, rawPty.get_termios());
+        assert.notDeepStrictEqual(termios, new Termios(0));
         // termios should not interfere with slave state
         rawPty.open_slave();
         termios.c_oflag = 0;
         rawPty.set_termios(termios);
-        assert.deepEqual(termios, rawPty.get_termios());
-        assert.notDeepEqual(termios, new Termios(0));
+        assert.deepStrictEqual(termios, rawPty.get_termios());
+        assert.notDeepStrictEqual(termios, new Termios(0));
         rawPty.close();
     });
 });
@@ -210,7 +210,7 @@ describe('class Pty', () => {
         let jsPty: pty.Pty = new pty.Pty({termios: new Termios(0)});
         fs.writeSync(jsPty.slave_fd, 'Hello world!\n');
         jsPty.stdout.on('readable', () => {
-            assert.equal(jsPty.stdout.read().toString(), 'Hello world!\r\n');
+            assert.strictEqual(jsPty.stdout.read().toString(), 'Hello world!\r\n');
             jsPty.close();
             done();
         });
@@ -218,16 +218,16 @@ describe('class Pty', () => {
     it('stdin --> slave_fd', () => {
         let jsPty: pty.Pty = new pty.Pty({termios: new Termios(0)});
         jsPty.stdin.write('Hello world!\n');
-        let buffer: Buffer = new Buffer(100);
+        let buffer: Buffer = Buffer.alloc(100);
         let size: number = fs.readSync(jsPty.slave_fd, buffer, 0, 100, -1);
-        assert.deepEqual(buffer.slice(0, size).toString(), 'Hello world!\n');
+        assert.deepStrictEqual(buffer.slice(0, size).toString(), 'Hello world!\n');
         jsPty.close();
     });
     it('slave --> stdout', (done) => {
         let jsPty: pty.Pty = new pty.Pty({termios: new Termios(0), init_slave: true});
         jsPty.slave.write('Hello world!\n');
         jsPty.stdout.on('readable', () => {
-            assert.equal(jsPty.stdout.read().toString(), 'Hello world!\r\n');
+            assert.strictEqual(jsPty.stdout.read().toString(), 'Hello world!\r\n');
             jsPty.close();
             done();
         });
@@ -236,7 +236,7 @@ describe('class Pty', () => {
         let jsPty: pty.Pty = new pty.Pty({termios: new Termios(0), init_slave: true});
         jsPty.stdin.write('Hello world!\n');
         jsPty.slave.on('readable', () => {
-            assert.equal(jsPty.slave.read().toString(), 'Hello world!\n');
+            assert.strictEqual(jsPty.slave.read().toString(), 'Hello world!\n');
             jsPty.close();
             done();
         });
@@ -247,9 +247,9 @@ describe('class Pty', () => {
         let ended = (): void => {
             wait_end--;
             if (!wait_end) {
-                assert.equal(jsPty.stdin, null);
-                assert.equal(jsPty.stdout, null);
-                assert.equal(jsPty.slave, null);
+                assert.strictEqual(jsPty.stdin, null);
+                assert.strictEqual(jsPty.stdout, null);
+                assert.strictEqual(jsPty.slave, null);
                 jsPty.close();
                 done();
             }
@@ -316,8 +316,8 @@ describe('spawn', () => {
             stderr_buf += data.toString();
         });
         child.stdout.on('close', () => {
-            assert.equal(stdout_buf, 'Hello stdout.');
-            assert.equal(stderr_buf, 'Hello stderr.');
+            assert.strictEqual(stdout_buf, 'Hello stdout.');
+            assert.strictEqual(stderr_buf, 'Hello stderr.');
             done();
         });
     });
@@ -331,7 +331,7 @@ describe('spawn', () => {
             stderr_buf += data.toString();
         });
         child.stdout.on('close', () => {
-            assert.equal(stderr_buf, 'Hello stderr.');
+            assert.strictEqual(stderr_buf, 'Hello stderr.');
             done();
         });
         setTimeout(() => { child.stdin.write(pty.STDERR_TESTER + '\r'); }, 200);
@@ -347,7 +347,7 @@ describe('spawn', () => {
             stderr_buf += data.toString();
         });
         child.stdout.on('close', () => {
-            assert.equal(stderr_buf, 'Hello stderr.');
+            assert.strictEqual(stderr_buf, 'Hello stderr.');
             done();
         });
         setTimeout(() => { child.stdin.write('bash -c ' + pty.STDERR_TESTER + '\r'); }, 200);
@@ -385,8 +385,8 @@ describe('UnixTerminal', () => {
         it('should default to utf8', (done) => {
             const term = new UnixTerminal('bash', [ '-c', `cat "${FIXTURES_PATH}"` ]);
             term.on('data', (data) => {
-                assert.equal(typeof data, 'string');
-                assert.equal(data, '\u00E6');
+                assert.strictEqual(typeof data, 'string');
+                assert.strictEqual(data, '\u00E6');
                 done();
             });
         });
@@ -395,10 +395,10 @@ describe('UnixTerminal', () => {
                 encoding: null,
             });
             term.on('data', (data) => {
-                assert.equal(typeof data, 'object');
+                assert.strictEqual(typeof data, 'object');
                 assert.ok(data instanceof Buffer);
-                assert.equal(0xC3, data[0]);
-                assert.equal(0xA6, data[1]);
+                assert.strictEqual(0xC3, data[0]);
+                assert.strictEqual(0xA6, data[1]);
                 done();
             });
         });
@@ -409,12 +409,12 @@ describe('UnixTerminal', () => {
             });
             let buffer = '';
             term.on('data', (data) => {
-                assert.equal(typeof data, 'string');
+                assert.strictEqual(typeof data, 'string');
                 buffer += data;
             });
             (term as any)._process.stdout.on('close', () => {
             //term.on('exit', () => {
-                assert.equal(new Buffer(buffer, 'base64').toString().replace('\r', '').replace('\n', ''), text);
+                assert.strictEqual(Buffer.from(buffer, 'base64').toString().replace('\r', '').replace('\n', ''), text);
                 done();
             });
         });
@@ -474,7 +474,7 @@ describe('UnixTerminal', () => {
                 });
                 // FIXME: stdout 'close' seems to be the only safe event for empty read buffers
                 (term as any)._process.stdout.on('close', () => {
-                    assert.equal(buffer.slice(-12), '__sentinel__');
+                    assert.strictEqual(buffer.slice(-12), '__sentinel__');
                     _done();
                 });
             };
@@ -532,7 +532,7 @@ describe('test data I/O', () => {
         });
         child.stdout.on('close', () => {
             let filecontent = fs.readFileSync('./fixtures/random_data', {encoding: 'binary'});
-            assert.equal(filecontent, buffer);
+            assert.strictEqual(filecontent, buffer);
             done();
         });
     });
